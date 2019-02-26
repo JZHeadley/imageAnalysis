@@ -1,0 +1,1 @@
+This is my first time using cmake... so these cmake files might be a little weird... I'm making an attempt at actually making this into a functional library
