@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
-project(imageAnalysis C CUDA)
+project(imageAnalysis CXX CUDA)
+find_package( OpenCV REQUIRED )
 
 set(CMAKE_C_STANDARD 11)
 include_directories("${PROJECT_SOURCE_DIR}/library")
@@ -7,7 +8,7 @@ include_directories("${PROJECT_SOURCE_DIR}/library")
 add_subdirectory(library)
 add_subdirectory(test)
 
-target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis)
+target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis  ${OpenCV_LIBS})
 
 # I don't take you to be an apple guy but just in case...
 if(APPLE)
