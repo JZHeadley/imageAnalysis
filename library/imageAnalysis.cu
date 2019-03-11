@@ -83,15 +83,15 @@ Image copyDeviceImageToHost(Image device){
 RGBImage *copyHostRGBImageToDevice(RGBImage *host){
     RGBImage *device = new RGBImage;
     // copy actual image data back to host from device
-    printf("%i %i %i %x\n",host->width,host->height,host->channels,host->image);
+    printf("%i %i %i %x\n",*(&(host->width)),host->height,host->channels,host->image);
 //    CUDA_CHECK_RETURN(cudaMalloc(&(device->image), sizeof(unsigned char) * host->width * host->height));
 //    CUDA_CHECK_RETURN(cudaMemcpy(&device->image, &host->image, sizeof(unsigned char) * host->width * host->height, cudaMemcpyHostToDevice));
     CUDA_CHECK_RETURN(cudaMalloc((void**)&(device->image), sizeof(unsigned char) * host->width * host->height * host->channels));
     CUDA_CHECK_RETURN(cudaMemcpy(device->image, host->image, sizeof(unsigned char) * host->width * host->height * host->channels, cudaMemcpyHostToDevice));
     // copy height and width back
-    CUDA_CHECK_RETURN(cudaMemcpy(&(device->height), &(host->height), sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK_RETURN(cudaMemcpy(&(device->width), &(host->width), sizeof(int), cudaMemcpyHostToDevice));
-    CUDA_CHECK_RETURN(cudaMemcpy(&(device->channels), &(host->channels), sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK_RETURN(cudaMemcpy(&device->height, &host->height, sizeof(int), cudaMemcpyHostToDevice));
+//    CUDA_CHECK_RETURN(cudaMemcpy(&(device->width), &(host->width), sizeof(int), cudaMemcpyHostToDevice));
+//    CUDA_CHECK_RETURN(cudaMemcpy(&(device->channels), &(host->channels), sizeof(int), cudaMemcpyHostToDevice));
 
     return device;
 }
