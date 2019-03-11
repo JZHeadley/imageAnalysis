@@ -28,7 +28,7 @@ typedef struct {
  */
 Image convertRGBToGrayscale(RGBImage rgb,int method);
 Image copyHostImageToDevice(Image host);
-RGBImage copyHostRGBImageToDevice(RGBImage *host);
+RGBImage *copyHostRGBImageToDevice(RGBImage *host);
 Image copyDeviceImageToHost(Image device);
 
 #endif

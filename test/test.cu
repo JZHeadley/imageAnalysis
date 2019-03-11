@@ -64,11 +64,11 @@ int main(int argc, char *argv[]) {
 //    imshow("Converted back and forth", output);
 //    waitKey(0);
 
-    RGBImage d_rgbImage = copyHostRGBImageToDevice(&rgbImage);
-    Image d_grayImage = convertRGBToGrayscale(d_rgbImage,0);
-    Image h_image = copyDeviceImageToHost(d_grayImage);
-    Mat grayscale = convertImageToMat(h_image);
-    imshow("grayscaled with cuda", grayscale);
-    waitKey(0);
+    RGBImage *d_rgbImage = copyHostRGBImageToDevice(&rgbImage);
+//    Image d_grayImage = convertRGBToGrayscale(d_rgbImage,0);
+//    Image h_image = copyDeviceImageToHost(d_grayImage);
+//    Mat grayscale = convertImageToMat(h_image);
+//    imshow("grayscaled with cuda", grayscale);
+//    waitKey(0);
     return 0;
 }
