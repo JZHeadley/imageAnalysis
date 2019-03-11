@@ -38,17 +38,60 @@ float *gpuReciprocal(float *data, unsigned size)
     return rc;
 }
 
-
-void convertRGBToGrayscale(RGBImage rgb, Image gray) {
-
+Image convertRGBToGrayscale(RGBImage rgb,int method) {
+    Image gray;
+    switch (method) {
+        case 0:
+            // luminance method
+            break;
+        case 1:
+            // average method
+            break;
+        default:
+            break;
+    }
+    return gray;
 }
 
-void copyHostImageToDevice(Image host, Image device){
+Image copyHostImageToDevice(Image host){
+    Image device;
 
+    // copy actual image data back to host from device
+    CUDA_CHECK_RETURN(cudaMalloc((void **)&device.image, (int) sizeof(unsigned char)* host.width * host.height));
+    CUDA_CHECK_RETURN(cudaMemcpy(device.image, host.image, (int) sizeof(unsigned char) * host.width * host.height, cudaMemcpyHostToDevice));
+    // copy height and width back
+    CUDA_CHECK_RETURN(cudaMemcpy(&device.height, &host.height, (int) sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK_RETURN(cudaMemcpy(&device.width, &host.width, (int) sizeof(int), cudaMemcpyHostToDevice));
+
+    return device;
 }
 
-void copyHostImageToDevice(RGBImage host, RGBImage device){
+Image copyDeviceImageToHost(Image device){
+    Image host;
+    // copy actual image data back to host from device
+    CUDA_CHECK_RETURN(cudaMemcpy(&host.image, device.image, sizeof(unsigned char) * device.width * device.height, cudaMemcpyDeviceToHost));
+    // copy height and width back
+    CUDA_CHECK_RETURN(cudaMemcpy(&host.height, &device.height, sizeof(int), cudaMemcpyDeviceToHost));
+    CUDA_CHECK_RETURN(cudaMemcpy(&host.width, &device.width, sizeof(int), cudaMemcpyDeviceToHost));
 
+    return host;
+}
+//unsigned char *image;
+//short channels;
+//int width;
+//int height;
+RGBImage copyHostRGBImageToDevice(RGBImage *host){
+    RGBImage device;
+    // copy actual image data back to host from device
+    printf("%i %i %i %x\n",host->width,host->height,host->channels,host->image);
+    CUDA_CHECK_RETURN(cudaMalloc(&(device->image), sizeof(unsigned char) * host->width * host->height));
+    CUDA_CHECK_RETURN(cudaMemcpy(&device->image, &host->image, sizeof(unsigned char) * host->width * host->height, cudaMemcpyHostToDevice));
+    // copy height and width back
+//    CUDA_CHECK_RETURN(cudaMemcpy(&(device.height), &(host.height), sizeof(int), cudaMemcpyHostToDevice));
+//    CUDA_CHECK_RETURN(cudaMemcpy(&(device.width), &(host.width), sizeof(int), cudaMemcpyHostToDevice));
+//    CUDA_CHECK_RETURN(cudaMemcpy(&(device.channels), &(host.channels), sizeof(int), cudaMemcpyHostToDevice));
+
+    return device;
 }
 
 /**

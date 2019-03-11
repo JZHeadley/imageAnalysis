@@ -21,7 +21,7 @@ RGBImage convertMatToImage(Mat mat) {
     output.image = ((unsigned char *) malloc(sizeof(unsigned char) * mat.total() * output.channels));
     int numPixels = mat.total();
     // swapping into rgb format here instead of the bgr the OpenCV Mat is in
-    int row=0, col=0;
+    int row = 0, col = 0;
     for (int i = 0; i < numPixels; i++) {
         row = i / numPixels;
         col = i - ((i / numPixels) * numPixels);
@@ -43,11 +43,13 @@ Mat convertRGBImageToMat(RGBImage image) {
     std::vector <Mat> channels{channelB, channelG, channelR};
 
     merge(channels, output);
-//    Mat output(3, image.height * image.width, CV_8UC1, image.image);
-//    Mat tmp = output.t();
-//    output = tmp.reshape(3,image.height);
-//    cvtColor(output,output,COLOR_RGB2BGR);
     return output;
+}
+
+Mat convertImageToMat(Image image) {
+    Mat output(image.height, image.width, CV_8UC1, image.image);
+    return output;
+
 }
 
 
@@ -55,13 +57,18 @@ int main(int argc, char *argv[]) {
     Mat mat;
     mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
     RGBImage rgbImage = convertMatToImage(mat);
-    printf("after convertMatToImage width: %i height: %i channels: %i \n", rgbImage.width, rgbImage.height,
-           rgbImage.channels);
-    imshow("Lenna", mat);
-//    waitKey(0);
+//    printf("width: %i height: %i channels: %i \n", rgbImage.width, rgbImage.height, rgbImage.channels);
+//    imshow("Lenna", mat);
 
     Mat output = convertRGBImageToMat(rgbImage);
-    imshow("Converted back and forth", output);
+//    imshow("Converted back and forth", output);
+//    waitKey(0);
+
+    RGBImage d_rgbImage = copyHostRGBImageToDevice(&rgbImage);
+    Image d_grayImage = convertRGBToGrayscale(d_rgbImage,0);
+    Image h_image = copyDeviceImageToHost(d_grayImage);
+    Mat grayscale = convertImageToMat(h_image);
+    imshow("grayscaled with cuda", grayscale);
     waitKey(0);
     return 0;
 }
