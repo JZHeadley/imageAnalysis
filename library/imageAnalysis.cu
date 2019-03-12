@@ -90,7 +90,8 @@ RGBImage *copyHostRGBImageToDevice(RGBImage *host, RGBImage *device){
     // copy height and width back
     int *d_height;
     CUDA_CHECK_RETURN(cudaMalloc(&d_height,sizeof(int)));
-    CUDA_CHECK_RETURN(cudaMemcpy(&d_height, &(host->height), sizeof(int), cudaMemcpyHostToDevice));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_height, &(host->height), sizeof(int), cudaMemcpyHostToDevice));
+
 
 //    CUDA_CHECK_RETURN(cudaMemcpy(&(device->width), &(host->width), sizeof(int), cudaMemcpyHostToDevice));
 //    CUDA_CHECK_RETURN(cudaMemcpy(&(device->channels), &(host->channels), sizeof(int), cudaMemcpyHostToDevice));
