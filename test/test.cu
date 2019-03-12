@@ -55,14 +55,15 @@ int main(int argc, char *argv[]) {
     RGBImage *rgbImage = new RGBImage;
     convertMatToImage(mat,rgbImage);
 //    printf("width: %i height: %i channels: %i \n", rgbImage.width, rgbImage.height, rgbImage.channels);
-    imshow("Lenna", mat);
+//    imshow("Lenna", mat);
 
     Mat *output  = new Mat;
     convertRGBImageToMat(rgbImage,output);
-    imshow("Converted back and forth", *output);
-    waitKey(0);
+//    imshow("Converted back and forth", *output);
+//    waitKey(0);
 
-//    RGBImage *d_rgbImage = copyHostRGBImageToDevice(&rgbImage);
+    RGBImage *d_rgbImage =new RGBImage;
+    copyHostRGBImageToDevice(rgbImage,d_rgbImage);
 //    Image d_grayImage = convertRGBToGrayscale(d_rgbImage,0);
 //    Image h_image = copyDeviceImageToHost(d_grayImage);
 //    Mat grayscale = convertImageToMat(h_image);
