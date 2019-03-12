@@ -26,9 +26,12 @@ typedef struct {
  * @param method enum representing which method to use for grayscale conversion
  *      0 for luminance method 1 for average method
  */
-Image convertRGBToGrayscale(RGBImage rgb,int method);
-Image copyHostImageToDevice(Image host);
-RGBImage *copyHostRGBImageToDevice(RGBImage *host,RGBImage *device);
-Image copyDeviceImageToHost(Image device);
+void convertRGBToGrayscale(RGBImage *rgb, Image *gray, int method);
+
+void copyHostImageToDevice(Image *host, Image *device);
+
+void copyHostRGBImageToDevice(RGBImage *host, RGBImage *device);
+
+void copyDeviceImageToHost(Image *device, Image *host);
 
 #endif

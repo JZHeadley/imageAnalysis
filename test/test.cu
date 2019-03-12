@@ -10,7 +10,7 @@ using namespace cv;
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
 
-void convertMatToImage(Mat mat,RGBImage *output) {
+void convertMatToImage(Mat mat, RGBImage *output) {
     Mat bgr[3];
     split(mat, bgr);
     output->channels = mat.channels();
@@ -31,7 +31,7 @@ void convertMatToImage(Mat mat,RGBImage *output) {
 }
 
 
-void convertRGBImageToMat(RGBImage *image,Mat *output) {
+void convertRGBImageToMat(RGBImage *image, Mat *output) {
     // adapted from https://stackoverflow.com/a/43190162
     int numPixels = image->height * image->width;
     Mat channelR(image->height, image->width, CV_8UC1, image->image);
@@ -42,10 +42,9 @@ void convertRGBImageToMat(RGBImage *image,Mat *output) {
     merge(channels, *output);
 }
 
-Mat convertImageToMat(Image image) {
-    Mat output(image.height, image.width, CV_8UC1, image.image);
-    return output;
-
+void convertImageToMat(Image *image, Mat *mat) {
+    Mat output(image->height, image->width, CV_8UC1, image->image);
+    *mat = output;
 }
 
 
@@ -53,21 +52,28 @@ int main(int argc, char *argv[]) {
     Mat mat;
     mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
     RGBImage *rgbImage = new RGBImage;
-    convertMatToImage(mat,rgbImage);
-//    printf("width: %i height: %i channels: %i \n", rgbImage.width, rgbImage.height, rgbImage.channels);
-//    imshow("Lenna", mat);
+    convertMatToImage(mat, rgbImage);
+    printf("image pointer: %x width: %i height: %i channels: %i \n", rgbImage->image, rgbImage->width, rgbImage->height, rgbImage->channels);
+    imshow("Lenna", mat);
 
-    Mat *output  = new Mat;
-    convertRGBImageToMat(rgbImage,output);
-//    imshow("Converted back and forth", *output);
+    Mat *output = new Mat;
+    convertRGBImageToMat(rgbImage, output);
+    imshow("Converted back and forth", *output);
 //    waitKey(0);
 
-    RGBImage *d_rgbImage =new RGBImage;
-    copyHostRGBImageToDevice(rgbImage,d_rgbImage);
-//    Image d_grayImage = convertRGBToGrayscale(d_rgbImage,0);
-//    Image h_image = copyDeviceImageToHost(d_grayImage);
-//    Mat grayscale = convertImageToMat(h_image);
-//    imshow("grayscaled with cuda", grayscale);
-//    waitKey(0);
+    RGBImage *d_rgbImage = new RGBImage;
+    copyHostRGBImageToDevice(rgbImage, d_rgbImage);
+    printf("image pointer: %x width: %i height: %i channels: %i \n", d_rgbImage->image, d_rgbImage->width, d_rgbImage->height, d_rgbImage->channels);
+
+    Image *d_grayImage = new Image;
+    convertRGBToGrayscale(d_rgbImage, d_grayImage, 0);
+
+    Image *h_grayImage = new Image;
+    copyDeviceImageToHost(d_grayImage, h_grayImage);
+
+    Mat *grayscale = new Mat;
+    convertImageToMat(h_grayImage, grayscale);
+    imshow("grayscaled with cuda", *grayscale);
+    waitKey(0);
     return 0;
 }
