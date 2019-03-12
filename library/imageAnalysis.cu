@@ -30,19 +30,48 @@ float *gpuReciprocal(float *data, unsigned size) {
 
     static const int BLOCK_SIZE = 256;
     const int blockCount = (size + BLOCK_SIZE - 1) / BLOCK_SIZE;
-    reciprocalKernel << < blockCount, BLOCK_SIZE >> > (gpuData, size);
+    reciprocalKernel<< < blockCount, BLOCK_SIZE>> > (gpuData, size);
 
     CUDA_CHECK_RETURN(cudaMemcpy(rc, gpuData, sizeof(float) * size, cudaMemcpyDeviceToHost));
     CUDA_CHECK_RETURN(cudaFree(gpuData));
     return rc;
 }
 
-void
-convertRGBToGrayscale(unsigned char *image, int channels, int width, int height, int method, unsigned char *output) {
-    Image gray;
+__global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, int height, int numPixels, int channels, unsigned char *output) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if ((tid < numPixels)) {
+        output[row * width + column] = (unsigned char) ((.21 * image[row * width + column]) + (.72 * image[row * width + column + numPixels]) + (.07 * image[row * width + column + (2 * numPixels)]));
+    }
+    return;
+}
+
+__global__ void convertRGBToGrayscaleAverage(unsigned char *image, int width, int height, int numPixels, int channels, unsigned char *output) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+//    printf("row: %i col: %i\n", row, column);
+    if ((tid < numPixels)) {
+        output[row * width + column] = (unsigned char) ((image[row * width + column] + image[row * width + column + numPixels] + image[row * width + column + (2 * numPixels)]) / 3);
+//        printf("%i\n", output[row * width + column]);
+    }
+    return;
+}
+
+void convertRGBToGrayscale(unsigned char *image, int channels, int width, int height, int method, unsigned char *output) {
+    /*
+    don't think you mentioned a grayscale conversion method so I looked it up and used this page as my guide
+    https://www.johndcook.com/blog/2009/08/24/algorithms-convert-color-grayscale/
+    */
+    int totalPixels = width * height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     switch (method) {
         case 0:
             // average method
+            convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid, 0>> > (image, width, height, totalPixels, channels, output);
             break;
         case 1:
             // luminance method
@@ -105,7 +134,7 @@ convertRGBToGrayscale(unsigned char *image, int channels, int width, int height,
 static void CheckCudaErrorAux(const char *file, unsigned line, const char *statement, cudaError_t err) {
     if (err == cudaSuccess)
         return;
-    std::cerr << statement << " returned " << cudaGetErrorString(err) << "(" << err << ") at " << file << ":" << line
-              << std::endl;
+    std::cerr<<statement<<" returned "<<cudaGetErrorString(err)<<"("<<err<<") at "<<file<<":"<<line
+             <<std::endl;
     exit(1);
 }
