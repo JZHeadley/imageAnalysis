@@ -34,4 +34,6 @@ void copyHostRGBImageToDevice(RGBImage *host, RGBImage *device);
 
 void copyDeviceImageToHost(Image *device, Image *host);
 
+void calculateHistogram(Image *image, int *h_histogram);
+
 #endif

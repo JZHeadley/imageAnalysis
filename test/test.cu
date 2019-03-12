@@ -43,8 +43,11 @@ void convertRGBImageToMat(RGBImage *image, Mat *output) {
 }
 
 void convertImageToMat(Image *image, Mat *mat) {
-    Mat output(image->height, image->width, CV_8UC1, image->image);
+    Mat output(image->height, image->width, CV_8UC1, &image->image);
     *mat = output;
+//    imshow("grayscaled with cuda", output);
+//    waitKey(0);
+
 }
 
 
@@ -54,11 +57,11 @@ int main(int argc, char *argv[]) {
     RGBImage *rgbImage = new RGBImage;
     convertMatToImage(mat, rgbImage);
     printf("image pointer: %x width: %i height: %i channels: %i \n", rgbImage->image, rgbImage->width, rgbImage->height, rgbImage->channels);
-    imshow("Lenna", mat);
+//    imshow("Lenna", mat);
 
     Mat *output = new Mat;
     convertRGBImageToMat(rgbImage, output);
-    imshow("Converted back and forth", *output);
+//    imshow("Converted back and forth", *output);
 //    waitKey(0);
 
     RGBImage *d_rgbImage = new RGBImage;
@@ -73,7 +76,16 @@ int main(int argc, char *argv[]) {
 
     Mat *grayscale = new Mat;
     convertImageToMat(h_grayImage, grayscale);
-    imshow("grayscaled with cuda", *grayscale);
-    waitKey(0);
+//    imshow("grayscaled with cuda", *grayscale);
+//    waitKey(0);
+
+    int *histogram = (int *) malloc(sizeof(int) * 256);
+    calculateHistogram(h_grayImage, histogram);
+    int sum = 0;
+    for (int i = 0; i < 256; i++) {
+//        printf("%i\n", histogram[i]);
+        sum += histogram[i];
+    }
+    printf("total pixels: %i num in histogram: %i\n", grayscale->total(), sum);
     return 0;
 }
