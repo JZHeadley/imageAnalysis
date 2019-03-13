@@ -10,7 +10,7 @@ using namespace cv;
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
 
-void convertMatToImage(Mat mat, RGBImage *output) {
+void convertMatToRGBImage(Mat mat, RGBImage *output) {
     Mat bgr[3];
     split(mat, bgr);
     output->channels = mat.channels();
@@ -43,7 +43,7 @@ void convertRGBImageToMat(RGBImage *image, Mat *output) {
 }
 
 void convertImageToMat(Image *image, Mat *mat) {
-    Mat output(image->height, image->width, CV_8UC1, &image->image);
+    Mat output(image->height, image->width, CV_8UC1, image->image);
     *mat = output;
 //    imshow("grayscaled with cuda", output);
 //    waitKey(0);
@@ -52,40 +52,43 @@ void convertImageToMat(Image *image, Mat *mat) {
 
 
 int main(int argc, char *argv[]) {
-    Mat mat;
-    mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
-    RGBImage *rgbImage = new RGBImage;
-    convertMatToImage(mat, rgbImage);
-    printf("image pointer: %x width: %i height: %i channels: %i \n", rgbImage->image, rgbImage->width, rgbImage->height, rgbImage->channels);
-//    imshow("Lenna", mat);
+    Mat mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
+    RGBImage *h_rgbImage = new RGBImage;
+    convertMatToRGBImage(mat, h_rgbImage);
+    printf("image pointer: %x width: %i height: %i channels: %i \n", h_rgbImage->image, h_rgbImage->width, h_rgbImage->height, h_rgbImage->channels);
+    imshow("Lenna", mat);
 
-    Mat *output = new Mat;
-    convertRGBImageToMat(rgbImage, output);
+//    Mat *output = new Mat;
+//    convertRGBImageToMat(h_rgbImage, output);
 //    imshow("Converted back and forth", *output);
 //    waitKey(0);
 
     RGBImage *d_rgbImage = new RGBImage;
-    copyHostRGBImageToDevice(rgbImage, d_rgbImage);
+    copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
     printf("image pointer: %x width: %i height: %i channels: %i \n", d_rgbImage->image, d_rgbImage->width, d_rgbImage->height, d_rgbImage->channels);
 
     Image *d_grayImage = new Image;
     convertRGBToGrayscale(d_rgbImage, d_grayImage, 0);
+//     good at here
 
     Image *h_grayImage = new Image;
     copyDeviceImageToHost(d_grayImage, h_grayImage);
 
+//    RGBImage * h_origImage = new RGBImage;
+//    copyDeviceRGBImageToHost(d_rgbImage, h_origImage);
+
     Mat *grayscale = new Mat;
     convertImageToMat(h_grayImage, grayscale);
-//    imshow("grayscaled with cuda", *grayscale);
-//    waitKey(0);
+    imshow("grayscaled with cuda", *grayscale);
+    waitKey(0);
 
-    int *histogram = (int *) malloc(sizeof(int) * 256);
-    calculateHistogram(h_grayImage, histogram);
-    int sum = 0;
-    for (int i = 0; i < 256; i++) {
+//    int *histogram = (int *) malloc(sizeof(int) * 256);
+//    calculateHistogram(d_grayImage, histogram);
+//    int sum = 0;
+//    for (int i = 0; i < 256; i++) {
 //        printf("%i\n", histogram[i]);
-        sum += histogram[i];
-    }
-    printf("total pixels: %i num in histogram: %i\n", grayscale->total(), sum);
+//        sum += histogram[i];
+//    }
+//    printf("total pixels: %i num in histogram: %i\n", grayscale->total(), sum);
     return 0;
 }

@@ -21,16 +21,18 @@ typedef struct {
 
 /**
  * Helper method that takes in an rgb image to convert and then makes the correct cuda call and converts the response back
- * @param rgb rgb image to convert to grayscale
- * @param gray grayscale image resulting from the conversion
+ * @param d_rgb rgb image to convert to grayscale
+ * @param d_gray grayscale image resulting from the conversion
  * @param method enum representing which method to use for grayscale conversion
  *      0 for luminance method 1 for average method
  */
-void convertRGBToGrayscale(RGBImage *rgb, Image *gray, int method);
+void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method);
 
 void copyHostImageToDevice(Image *host, Image *device);
 
 void copyHostRGBImageToDevice(RGBImage *host, RGBImage *device);
+
+void copyDeviceRGBImageToHost(RGBImage *device, RGBImage *host);
 
 void copyDeviceImageToHost(Image *device, Image *host);
 

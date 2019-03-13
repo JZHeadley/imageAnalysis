@@ -20,42 +20,39 @@ __global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, 
 
 __global__ void convertRGBToGrayscaleAverage(unsigned char *image, int width, int height, int numPixels, int channels, unsigned char *output) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
-
     int row = tid / width;
     int column = tid - ((tid / width) * width);
-//    printf("row: %i col: %i\n", row, column);
     if ((tid < numPixels)) {
         output[row * width + column] = (unsigned char) ((image[row * width + column] + image[row * width + column + numPixels] + image[row * width + column + (2 * numPixels)]) / 3);
-//        printf("%i\n", output[row * width + column]);
     }
     return;
 }
 
 
-void convertRGBToGrayscale(RGBImage *rgb, Image *gray, int method) {
+void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     /*
     don't think you mentioned a grayscale conversion method so I looked it up and used this page as my guide
     https://www.johndcook.com/blog/2009/08/24/algorithms-convert-color-grayscale/
     */
-    int totalPixels = rgb->width * rgb->height;
-    int threadsPerBlock = 512;
+    int totalPixels = d_rgb->width * d_rgb->height;
+    int threadsPerBlock = 256;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     switch (method) {
         case 0:
             // luminance method
-            CUDA_CHECK_RETURN(cudaMalloc((void **) &(gray->image), (int) sizeof(unsigned char) * rgb->width * rgb->height));
+            CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
 
-            convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid, 0>> > (rgb->image, rgb->width, totalPixels, rgb->height, rgb->channels, gray->image);
-            gray->width = rgb->width;
-            gray->height = rgb->height;
+            convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
+            d_gray->width = d_rgb->width;
+            d_gray->height = d_rgb->height;
             break;
         case 1:
             // average method
-            CUDA_CHECK_RETURN(cudaMalloc((void **) &(gray->image), (int) sizeof(unsigned char) * rgb->width * rgb->height));
+            CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
 
-            convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid, 0>> > (rgb->image, rgb->width, totalPixels, rgb->height, rgb->channels, gray->image);
-            gray->width = rgb->width;
-            gray->height = rgb->height;
+            convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
+            d_gray->width = d_rgb->width;
+            d_gray->height = d_rgb->height;
             break;
         default:
             break;
@@ -67,11 +64,13 @@ __global__ void calcHistogram(unsigned char *data, int width, int numPixels, int
     int row = tid / width;
     int column = tid - ((tid / width) * width);
     if (tid < numPixels) {
+//        printf("row %i col %i\n", row, column);
         int val = data[row * width + column];
         printf("%i\n", val);
+        if (val != 0)
+            printf("row %i col %i\n", row, column);
         atomicAdd(&histogram[val], 1);
     }
-    return;
 }
 
 void calculateHistogram(Image *image, int *h_histogram) {
@@ -79,12 +78,12 @@ void calculateHistogram(Image *image, int *h_histogram) {
     int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     int *d_histogram;
-    unsigned char *d_image;
-    CUDA_CHECK_RETURN(cudaMalloc((void **) &d_image, (int) sizeof(unsigned char) * totalPixels));
-    CUDA_CHECK_RETURN(cudaMemcpy(d_image, image->image, sizeof(unsigned char) * totalPixels, cudaMemcpyHostToDevice));
+//    unsigned char *d_image;
+//    CUDA_CHECK_RETURN(cudaMalloc( &d_image, (int) sizeof(unsigned char) * totalPixels));
+//    CUDA_CHECK_RETURN(cudaMemcpy(d_image, image->image, sizeof(unsigned char) * totalPixels, cudaMemcpyHostToDevice));
 
-    CUDA_CHECK_RETURN(cudaMalloc((void **) &d_histogram, (int) sizeof(int) * 256));
-    CUDA_CHECK_RETURN(cudaMemset((void *) d_histogram, 0, 256 * sizeof(int)));
+    CUDA_CHECK_RETURN(cudaMalloc(&d_histogram, (int) sizeof(int) * 256));
+    CUDA_CHECK_RETURN(cudaMemset(d_histogram, 0, 256 * sizeof(int)));
 
     calcHistogram<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, image->width, totalPixels, d_histogram);
 
@@ -108,12 +107,29 @@ void copyDeviceImageToHost(Image *device, Image *host) {
     host->image = (unsigned char *) malloc(sizeof(unsigned char) * host->height * host->width);
     // copy actual image data back to host from device
     CUDA_CHECK_RETURN(cudaMemcpy(host->image, device->image, sizeof(unsigned char) * device->width * device->height, cudaMemcpyDeviceToHost));
+//    for (int i = 0; i < (host->height * host->width); i++) {
+//        printf("%i\n", host->image[i]);
+//    }
 
+}
+
+void copyDeviceRGBImageToHost(RGBImage *device, RGBImage *host) {
+    // copy height and width back to host
+    host->height = device->height;
+    host->width = device->width;
+    host->channels = 1;
+    host->image = (unsigned char *) malloc(sizeof(unsigned char) * host->height * host->width);
+    // copy actual image data back to host from device
+    CUDA_CHECK_RETURN(cudaMemcpy(host->image, device->image, sizeof(unsigned char) * device->width * device->height, cudaMemcpyDeviceToHost));
+//    for (int i = 0; i < (host->height * host->width); i++) {
+//        printf("%i\n", host->image[i]);
+//    }
 
 }
 
 void copyHostRGBImageToDevice(RGBImage *host, RGBImage *device) {
     // copy actual image data to device from host
+//    unsigned char*
     CUDA_CHECK_RETURN(cudaMalloc((void **) &(device->image), sizeof(unsigned char) * host->width * host->height * host->channels));
     CUDA_CHECK_RETURN(cudaMemcpy(device->image, host->image, sizeof(unsigned char) * host->width * host->height * host->channels, cudaMemcpyHostToDevice));
     // copy height and width to device
