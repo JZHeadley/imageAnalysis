@@ -8,7 +8,7 @@ include_directories("${PROJECT_SOURCE_DIR}/library")
 add_subdirectory(library)
 add_subdirectory(test)
 
-target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis  ${OpenCV_LIBS})
+target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis ${OpenCV_LIBS})
 
 # I don't take you to be an apple guy but just in case...
 if(APPLE)

@@ -74,19 +74,24 @@ __global__ void calcHistogram(unsigned char *data, int width, int numPixels, int
 void calculateHistogram(Image *image, int *h_histogram, int *d_histogram) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
-    int operationsPerThread = 10;
-    int numOperations = totalPixels / operationsPerThread;
-    int blocksPerGrid = (numOperations + threadsPerBlock - 1) / threadsPerBlock;
-//    unsigned char *d_image;
-//    CUDA_CHECK_RETURN(cudaMalloc( &d_image, (int) sizeof(unsigned char) * totalPixels));
-//    CUDA_CHECK_RETURN(cudaMemcpy(d_image, image->image, sizeof(unsigned char) * totalPixels, cudaMemcpyHostToDevice));
-
+//    int operationsPerThread = 10;
+//    int numOperations = totalPixels / operationsPerThread;
+//    int blocksPerGrid = (numOperations + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     CUDA_CHECK_RETURN(cudaMalloc(&d_histogram, (int) sizeof(int) * 256));
     CUDA_CHECK_RETURN(cudaMemset(d_histogram, 0, 256 * sizeof(int)));
 
     calcHistogram<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, image->width, totalPixels, d_histogram);
 
     CUDA_CHECK_RETURN(cudaMemcpy(h_histogram, d_histogram, sizeof(int) * 256, cudaMemcpyDeviceToHost));
+}
+
+void equalizeHistogram(int* original,int* equalized, int * mappings){
+
+}
+
+void histogramEqualizeImage(){
+
 }
 
 void extractSingleColorChannel(RGBImage *rgb, Image *out, int color) {

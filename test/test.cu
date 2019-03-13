@@ -1,12 +1,18 @@
 #include "imageAnalysis.h"
 #include "../library/imageAnalysis.h"
 
+#include <stdio.h>
+#include <sys/ioctl.h>
+#include <math.h>
+#include <string.h>
+
 #include <vector>
 #include <stdlib.h>
 #include <opencv2/opencv.hpp>
 
 using namespace cv;
 #define DEBUG_GRAYSCALE 0
+#define DEBUG_HIST 0
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
 
@@ -45,23 +51,79 @@ void convertRGBImageToMat(RGBImage *image, Mat *output) {
 void convertImageToMat(Image *image, Mat *mat) {
     Mat output(image->height, image->width, CV_8UC1, image->image);
     *mat = output;
-//    imshow("grayscaled with cuda", output);
-//    waitKey(0);
 
 }
 
+/*
+ * The following few functions are related to drawing a histogram and I didn't write them myself.
+ * I mentioned it to a friend and he wrote them for the fun of it.  They shouldn't make it into whatever I turn in and are not required functions so I figure its fine for testing things out.
+ * */
+int findMax(int *arr, int len) {
+    int m = -1;
+    for (int i = 0; i < len; i++) {
+        if (arr[i] > m) {
+            m = arr[i];
+        }
+    }
+    return m;
+}
 
+int getTerminalWidth() {
+    struct winsize w;
+    ioctl(0, TIOCGWINSZ, &w);
+    return w.ws_col;
+}
+
+void padWithZeroes(char *str, int num, int numDigits) {
+    int i = 0;
+    if (num == 0) {
+        for (int i = 0; i < numDigits; i++) {
+            str[i] = '0';
+        }
+    } else {
+        while (num * pow(10, i) < pow(10, numDigits - 1)) {
+            str[i] = '0';
+            i++;
+        }
+        sprintf(str + i, "%d", num);
+    }
+}
+
+void drawHistogram(int *arr, int len) {
+    int max = findMax(arr, len);
+    int numDigits = 0;
+    int width = getTerminalWidth() - 5;
+    int dw = max / width;
+    while (pow(10, numDigits) < len) {
+        numDigits++;
+    }
+    width = getTerminalWidth() - (numDigits + 2);
+    dw = max / width;
+    printf("%d, %d, %d\n", max, width, dw);
+    for (int i = 0; i < len; i++) {
+        char string[numDigits + 2];
+        padWithZeroes(string, i, numDigits);
+        printf("\n");
+        printf("%s|", string);
+        for (int j = 0; j < width - numDigits + 2; j++) {
+            if (arr[i] > dw * j) {
+                printf("#");
+            } else {
+                break;
+            }
+        }
+    }
+    printf("\n");
+}
+
+// end not my work
 int main(int argc, char *argv[]) {
     Mat mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
     RGBImage *h_rgbImage = new RGBImage;
     convertMatToRGBImage(mat, h_rgbImage);
     printf("image pointer: %x width: %i height: %i channels: %i \n", h_rgbImage->image, h_rgbImage->width, h_rgbImage->height, h_rgbImage->channels);
-//    imshow("Lenna", mat);
-
-//    Mat *output = new Mat;
-//    convertRGBImageToMat(h_rgbImage, output);
-//    imshow("Converted back and forth", *output);
-//    waitKey(0);
+    if (DEBUG_GRAYSCALE)
+        imshow("Lenna", mat);
 
     RGBImage *d_rgbImage = new RGBImage;
     copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
@@ -86,11 +148,15 @@ int main(int argc, char *argv[]) {
     int *h_histogram = (int *) malloc(sizeof(int) * 256);
     int *d_histogram;
     calculateHistogram(d_grayImage, h_histogram, d_histogram);
-    int sum = 0;
-    for (int i = 0; i < 256; i++) {
-        printf("%i\n", h_histogram[i]);
-        sum += h_histogram[i];
+    if (DEBUG_HIST) {
+        int sum = 0;
+        for (int i = 0; i < 256; i++) {
+            printf("%i\n", h_histogram[i]);
+            sum += h_histogram[i];
+        }
+        printf("total pixels: %i num in histogram: %i\n", d_grayImage->width * d_grayImage->height, sum);
     }
-    printf("total pixels: %i num in histogram: %i\n", d_grayImage->width * d_grayImage->height, sum);
+    drawHistogram(h_histogram, 256);
     return 0;
 }
+
