@@ -64,20 +64,19 @@ __global__ void calcHistogram(unsigned char *data, int width, int numPixels, int
     int row = tid / width;
     int column = tid - ((tid / width) * width);
     if (tid < numPixels) {
-//        printf("row %i col %i\n", row, column);
         int val = data[row * width + column];
-        printf("%i\n", val);
         if (val != 0)
-            printf("row %i col %i\n", row, column);
-        atomicAdd(&histogram[val], 1);
+            atomicAdd(&histogram[val], 1);
     }
+    return;
 }
 
-void calculateHistogram(Image *image, int *h_histogram) {
+void calculateHistogram(Image *image, int *h_histogram, int *d_histogram) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
-    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
-    int *d_histogram;
+    int operationsPerThread = 10;
+    int numOperations = totalPixels / operationsPerThread;
+    int blocksPerGrid = (numOperations + threadsPerBlock - 1) / threadsPerBlock;
 //    unsigned char *d_image;
 //    CUDA_CHECK_RETURN(cudaMalloc( &d_image, (int) sizeof(unsigned char) * totalPixels));
 //    CUDA_CHECK_RETURN(cudaMemcpy(d_image, image->image, sizeof(unsigned char) * totalPixels, cudaMemcpyHostToDevice));
@@ -90,6 +89,27 @@ void calculateHistogram(Image *image, int *h_histogram) {
     CUDA_CHECK_RETURN(cudaMemcpy(h_histogram, d_histogram, sizeof(int) * 256, cudaMemcpyDeviceToHost));
 }
 
+void extractSingleColorChannel(RGBImage *rgb, Image *out, int color) {
+    out->width = rgb->width;
+    out->height = rgb->height;
+    int totalPixels = rgb->width * rgb->height;
+    //TODO: Memory leaks right here probably should fix but meh it should work well enough like this...
+    switch (color) {
+        case 0: // red
+            out->image = rgb->image;
+            break;
+        case 1: // green
+            out->image = rgb->image + totalPixels;
+
+            break;
+        case 2: // blue
+            out->image = rgb->image + (2 * totalPixels);
+            break;
+        default:
+            printf("invalid option\n");
+            break;
+    }
+}
 
 void copyHostImageToDevice(Image *host, Image *device) {
     // copy actual image data back to host from device

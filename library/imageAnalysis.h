@@ -36,6 +36,17 @@ void copyDeviceRGBImageToHost(RGBImage *device, RGBImage *host);
 
 void copyDeviceImageToHost(Image *device, Image *host);
 
-void calculateHistogram(Image *image, int *h_histogram);
+void calculateHistogram(Image *image, int *h_histogram, int *d_histogram);
+
+/**
+ *
+ * @param rgb the image to extract a color from
+ * @param out the output image
+ * @param color a number specifying which channel to extract
+ *              0 for red
+ *              1 for green
+ *              2 for blue
+ */
+void extractSingleColorChannel(RGBImage *rgb, Image *out, int color);
 
 #endif
