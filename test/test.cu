@@ -23,7 +23,6 @@ void convertMatToRGBImage(Mat mat, RGBImage *output) {
     output->channels = mat.channels();
     output->height = mat.rows;
     output->width = mat.cols;
-//    printf("%i %i %i\n", output.height,output.width,output.channels);
     output->image = ((unsigned char *) malloc(sizeof(unsigned char) * mat.total() * output->channels));
     int numPixels = mat.total();
     // swapping into rgb format here instead of the bgr the OpenCV Mat is in
@@ -122,10 +121,10 @@ int main(int argc, char *argv[]) {
     Mat mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
     RGBImage *h_rgbImage = new RGBImage;
     convertMatToRGBImage(mat, h_rgbImage);
-    printf("image pointer: %x width: %i height: %i channels: %i \n", h_rgbImage->image, h_rgbImage->width, h_rgbImage->height, h_rgbImage->channels);
-    if (DEBUG_GRAYSCALE)
+    if (DEBUG_GRAYSCALE) {
         imshow("Lenna", mat);
-
+        printf("image pointer: %x width: %i height: %i channels: %i \n", h_rgbImage->image, h_rgbImage->width, h_rgbImage->height, h_rgbImage->channels);
+    }
     RGBImage *d_rgbImage = new RGBImage;
     copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
     printf("image pointer: %x width: %i height: %i channels: %i \n", d_rgbImage->image, d_rgbImage->width, d_rgbImage->height, d_rgbImage->channels);
@@ -180,6 +179,7 @@ int main(int argc, char *argv[]) {
         drawHistogram(h_histogram2, 256);
 
     }
+
     return 0;
 }
 
