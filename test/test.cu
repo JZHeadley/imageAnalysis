@@ -11,8 +11,9 @@
 #include <opencv2/opencv.hpp>
 
 using namespace cv;
-#define DEBUG_GRAYSCALE 0
-#define DEBUG_HIST 0
+#define DEBUG_GRAYSCALE false
+#define DEBUG_HIST false
+#define DEBUG_EQUALIZED false
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
 
@@ -57,7 +58,7 @@ void convertImageToMat(Image *image, Mat *mat) {
 /*
  * The following few functions are related to drawing a histogram and I didn't write them myself.
  * I mentioned it to a friend and he wrote them for the fun of it.  They shouldn't make it into whatever I turn in and are not required functions so I figure its fine for testing things out.
- * */
+ */
 int findMax(int *arr, int len) {
     int m = -1;
     for (int i = 0; i < len; i++) {
@@ -145,18 +146,40 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    int *h_histogram = (int *) malloc(sizeof(int) * 256);
+    int *h_histogram;
+    cudaMallocHost(&h_histogram, sizeof(int) * 256);
     int *d_histogram;
     calculateHistogram(d_grayImage, h_histogram, d_histogram);
     if (DEBUG_HIST) {
         int sum = 0;
         for (int i = 0; i < 256; i++) {
-            printf("%i\n", h_histogram[i]);
+//            printf("%i\n", h_histogram[i]);
             sum += h_histogram[i];
         }
         printf("total pixels: %i num in histogram: %i\n", d_grayImage->width * d_grayImage->height, sum);
+        drawHistogram(h_histogram, 256);
     }
-    drawHistogram(h_histogram, 256);
+    int h_mappings[256];
+    equalizeHistogram(h_histogram, h_mappings, d_grayImage->height * d_grayImage->width);
+    Image *d_equalizedImage = new Image;
+    equalizeImageWithHist(d_grayImage, d_equalizedImage, h_mappings);
+    if (DEBUG_EQUALIZED) {
+        Image *h_equalizedImage = new Image;
+        copyDeviceImageToHost(d_equalizedImage, h_equalizedImage);
+        Mat *equalizedMat = new Mat;
+        convertImageToMat(h_equalizedImage, equalizedMat);
+        imshow("equalized", *equalizedMat);
+        while (cvWaitKey(1) != '\33') {
+
+        }
+
+        int *h_histogram2;
+        cudaMallocHost(&h_histogram2, sizeof(int) * 256);
+        int *d_histogram2;
+        calculateHistogram(d_equalizedImage, h_histogram2, d_histogram2);
+        drawHistogram(h_histogram2, 256);
+
+    }
     return 0;
 }
 

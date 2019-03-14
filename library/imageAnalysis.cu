@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <iostream>
 
+#include <omp.h>
+
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value);
@@ -86,13 +88,66 @@ void calculateHistogram(Image *image, int *h_histogram, int *d_histogram) {
     CUDA_CHECK_RETURN(cudaMemcpy(h_histogram, d_histogram, sizeof(int) * 256, cudaMemcpyDeviceToHost));
 }
 
-void equalizeHistogram(int* original,int* equalized, int * mappings){
+
+void equalizeHistogram(int *original, int *mappings, int numPixels) {
+//#pragma omp parallel num_threads(2)
+    int numColors = 256;
+
+    float pdf[256];
+    float cdf[256];
+    // tried to use openmp and speed this up more but something is weird with openmp + cuda + cmake and it only ever ran on 1 thread for me
+//#pragma omp parallel for default (none) shared(numColors, original, pdf, cdf)
+    for (int i = 0; i < numColors; i++) {
+//        int threadId = omp_get_thread_num();
+//        printf("Thread %i reporting for %i\n", omp_get_thread_num(), i);
+        pdf[i] = original[i] / (float) numPixels;
+        cdf[i] = pdf[i];
+        if (i > 0) {
+            cdf[i] = cdf[i] + cdf[i - 1];
+            mappings[i] = (int) (cdf[i] * 255);
+        } else {
+            mappings[i] = (int) (cdf[i] * 255);
+        }
+    }
+//#pragma omp parallel end
+}
+
+__global__ void equalizeImage(unsigned char *image, int width, int numPixels, int *mappings, unsigned char *output) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if ((tid < numPixels)) {
+        output[row * width + column] = (unsigned char) (mappings[image[row * width + column]]);
+    }
+    return;
+}
+
+void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mappings) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+
+    d_equalizedImage->width = image->width;
+    d_equalizedImage->height = image->height;
+    int *d_mappings;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_mappings, (int) sizeof(int) * 256));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_mappings, h_mappings, sizeof(int) * 256, cudaMemcpyHostToDevice));
+    CUDA_CHECK_RETURN(cudaMalloc(&(d_equalizedImage->image), sizeof(unsigned char) * image->width * image->height));
+    equalizeImage<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, image->width, totalPixels, d_mappings, d_equalizedImage->image);
+
 
 }
 
-void histogramEqualizeImage(){
-
-}
+// def histogramEqualization(image,histogram):
+//  pdf = calculatePdf(histogram,image.shape[0]*image.shape[1])
+//  cdf = calculateCdf(pdf)
+//  mapLookup = np.array(cdf * 255,dtype=int)
+//  shape = image.shape
+//  equalized = np.zeros(shape)
+//  for i in range(0,shape[0]):
+//      for j in range(0,shape[1]):
+//          equalized[i][j] = mapLookup[int(image[i][j])]
+//  print(mapLookup)
 
 void extractSingleColorChannel(RGBImage *rgb, Image *out, int color) {
     out->width = rgb->width;
