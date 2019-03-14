@@ -12,6 +12,7 @@
 #include <iostream>
 #include <fstream>
 
+#include <dirent.h>
 #include <opencv2/opencv.hpp>
 #include <json/json.h>
 
@@ -125,6 +126,7 @@ void drawHistogram(int *arr, int len) {
     }
     printf("\n");
 }
+// end not my work
 
 void testing() {
     Mat mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
@@ -192,56 +194,77 @@ void testing() {
 
 void readInKernel(Json::Value kernel, int *k, int numValues) {
     const Json::Value &k_vals = kernel["values"];
-    printf("numVals %i k_vals size: %i\n", numValues, k_vals.size());
     assert(numValues == k_vals.size());
     for (int i = 0; i < numValues; i++) {
         k[i] = k_vals[i].asInt();
     }
 }
 
-void executeOperations(Json::Value json) {
+vector <string> getFileNames(string input_image_folder) {
+    vector <string> files;
+    DIR *dir;
+    struct dirent *ent;
+    if ((dir = opendir(input_image_folder.c_str())) != NULL) {
+        /* print all the files and directories within directory */
+        while ((ent = readdir(dir)) != NULL) {
+            if (strncmp(ent->d_name, ".", 1)) {
+                files.push_back(ent->d_name);
+//                printf("%s\n", ent->d_name);
+            }
+        }
+        closedir(dir);
+    } else {
+        perror("");
+    }
+    return files;
+
+}
+
+void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages) {
+    vector <string> files = getFileNames(input_image_folder);
+
     const Json::Value &operations = json["operations"];
-    for (int i = 0; i < operations.size(); i++) {
-        string type = operations[i]["type"].asString();
-        printf("Operation %i: %s\n", i, type.c_str());
-        if (type == "linear-filter") {
-            printf("Linear Filter\n");
-            Json::Value kernel = operations[i]["kernel"];
-            int k_width = kernel["width"].asInt();
-            int k_height = kernel["height"].asInt();
-            int *k = (int *) malloc(sizeof(int) * k_width * k_height);
-            printf("width: %i height: %i\n", k_width, k_height);
-            readInKernel(kernel, k, k_width * k_height);
+    int numOperations = operations.size();
+    string curFilePath;
+    for (int k = 0; k < files.size(); k++) {
+        curFilePath = files[k];
+        printf("Working on image %s\n", curFilePath.c_str());
+        for (int i = 0; i < numOperations; i++) {
+            string type = operations[i]["type"].asString();
+//            printf("Operation %i: %s\n", i, type.c_str());
+            if (type == "linear-filter") {
+//                printf("Linear Filter\n");
+                Json::Value kernel = operations[i]["kernel"];
+                int k_width = kernel["width"].asInt();
+                int k_height = kernel["height"].asInt();
+                int *k = (int *) malloc(sizeof(int) * k_width * k_height);
+                readInKernel(kernel, k, k_width * k_height);
 
 
-
-            free(k);
-        } else if (type == "median-filter") {
-            printf("Median Filter\n");
-            Json::Value kernel = operations[i]["kernel"];
-            int k_width = kernel["width"].asInt();
-            int k_height = kernel["height"].asInt();
-            int *k = (int *) malloc(sizeof(int) * k_width * k_height);
-            printf("width: %i height: %i\n", k_width, k_height);
-            readInKernel(kernel, k, k_width * k_height);
+                free(k);
+            } else if (type == "median-filter") {
+//                printf("Median Filter\n");
+                Json::Value kernel = operations[i]["kernel"];
+                int k_width = kernel["width"].asInt();
+                int k_height = kernel["height"].asInt();
+                int *k = (int *) malloc(sizeof(int) * k_width * k_height);
+                readInKernel(kernel, k, k_width * k_height);
 
 
-
-
-            free(k);
-        } else if (type == "gaussian-noise") {
-            printf("Gaussian Noise\n");
-        } else if (type == "salt-and-pepper") {
-            printf("Salt and Pepper Noise\n");
-        } else if (type == "histogram-equalization") {
-            printf("Histogram Equalization\n");
-        } else {
-            printf("Unsupported Operation\n");
+                free(k);
+            } else if (type == "gaussian-noise") {
+//                printf("Gaussian Noise\n");
+            } else if (type == "salt-and-pepper") {
+//                printf("Salt and Pepper Noise\n");
+            } else if (type == "histogram-equalization") {
+//                printf("Histogram Equalization\n");
+            } else {
+                printf("Unsupported Operation\n");
+            }
         }
     }
 }
 
-// end not my work
 int main(int argc, char *argv[]) {
     Json::Value json;
     std::ifstream config("/home/jzheadley/CLionProjects/imageAnalysis/test/input.json", std::ifstream::binary);
@@ -256,7 +279,7 @@ int main(int argc, char *argv[]) {
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
-    executeOperations(json);
+    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages);
     testing();
 
 

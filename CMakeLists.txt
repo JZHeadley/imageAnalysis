@@ -6,10 +6,18 @@ HunterGate(
 )
 project(imageAnalysis CXX CUDA)
 hunter_add_package(jsoncpp)
+#hunter_add_package(OpenCV)
+
+#hunter_add_package(Boost COMPONENTS filesystem )
+#find_package(Boost COMPONENTS filesystem REQUIRED)
 
 find_package(OpenCV REQUIRED)
 find_package(OpenMP)
 find_package(jsoncpp CONFIG REQUIRED)
+
+#set(CMAKE_CXX_STANDARD 17)
+#set(CMAKE_CXX_STANDARD_REQUIRED ON)
+#set(CMAKE_CXX_EXTENSIONS OFF)
 
 if (OPENMP_FOUND)
     message("Found OpenMP!")
