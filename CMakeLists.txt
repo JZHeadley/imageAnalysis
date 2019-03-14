@@ -1,7 +1,15 @@
 cmake_minimum_required(VERSION 3.13)
+include("cmake/HunterGate.cmake")
+HunterGate(
+        URL "https://github.com/ruslo/hunter/archive/v0.23.131.tar.gz"
+        SHA1 "0512ea6392065c8ece808296fddd7d8664d30920"
+)
 project(imageAnalysis CXX CUDA)
+hunter_add_package(jsoncpp)
+
 find_package(OpenCV REQUIRED)
 find_package(OpenMP)
+find_package(jsoncpp CONFIG REQUIRED)
 
 if (OPENMP_FOUND)
     message("Found OpenMP!")
@@ -20,7 +28,7 @@ include_directories("${PROJECT_SOURCE_DIR}/library")
 add_subdirectory(library)
 add_subdirectory(test)
 
-target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis ${OpenCV_LIBS})
+target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis ${OpenCV_LIBS} jsoncpp_lib_static)
 
 # I don't take you to be an apple guy but just in case...
 if (APPLE)

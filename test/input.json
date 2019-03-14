@@ -1,5 +1,8 @@
 {
   "image_folder": "/home/jzheadley/projects/classes/cmsc630/project1/Cancerous cell smears",
+  "saveIntermediateImages": false,
+  "saveFinalImages": true,
+  "output_dir": "./output_images",
   "operations": [
     {
       "type": "linear-filter",
@@ -39,7 +42,7 @@
     },
     {
       "type": "gaussian-noise",
-      "std-dev": 1,
+      "std_dev": 1,
       "mean": 1
     },
     {
@@ -49,7 +52,5 @@
     {
       "type": "histogram-equalization"
     }
-  ],
-  "saveIntermediateImages": false,
-  "saveFinalImages": true
+  ]
 }

@@ -2,17 +2,27 @@
 #include "../library/imageAnalysis.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/ioctl.h>
 #include <math.h>
 #include <string.h>
+# include <assert.h>
 
 #include <vector>
-#include <stdlib.h>
-#include <opencv2/opencv.hpp>
+#include <iostream>
+#include <fstream>
 
+#include <opencv2/opencv.hpp>
+#include <json/json.h>
+
+using namespace std;
 using namespace cv;
+
+//#define DEBUG_GRAYSCALE true
 #define DEBUG_GRAYSCALE false
+//#define DEBUG_HIST true
 #define DEBUG_HIST false
+//#define DEBUG_EQUALIZED true
 #define DEBUG_EQUALIZED false
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
@@ -116,8 +126,7 @@ void drawHistogram(int *arr, int len) {
     printf("\n");
 }
 
-// end not my work
-int main(int argc, char *argv[]) {
+void testing() {
     Mat mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
     RGBImage *h_rgbImage = new RGBImage;
     convertMatToRGBImage(mat, h_rgbImage);
@@ -179,6 +188,77 @@ int main(int argc, char *argv[]) {
         drawHistogram(h_histogram2, 256);
 
     }
+}
+
+void readInKernel(Json::Value kernel, int *k, int numValues) {
+    const Json::Value &k_vals = kernel["values"];
+    printf("numVals %i k_vals size: %i\n", numValues, k_vals.size());
+    assert(numValues == k_vals.size());
+    for (int i = 0; i < numValues; i++) {
+        k[i] = k_vals[i].asInt();
+    }
+}
+
+void executeOperations(Json::Value json) {
+    const Json::Value &operations = json["operations"];
+    for (int i = 0; i < operations.size(); i++) {
+        string type = operations[i]["type"].asString();
+        printf("Operation %i: %s\n", i, type.c_str());
+        if (type == "linear-filter") {
+            printf("Linear Filter\n");
+            Json::Value kernel = operations[i]["kernel"];
+            int k_width = kernel["width"].asInt();
+            int k_height = kernel["height"].asInt();
+            int *k = (int *) malloc(sizeof(int) * k_width * k_height);
+            printf("width: %i height: %i\n", k_width, k_height);
+            readInKernel(kernel, k, k_width * k_height);
+
+
+
+            free(k);
+        } else if (type == "median-filter") {
+            printf("Median Filter\n");
+            Json::Value kernel = operations[i]["kernel"];
+            int k_width = kernel["width"].asInt();
+            int k_height = kernel["height"].asInt();
+            int *k = (int *) malloc(sizeof(int) * k_width * k_height);
+            printf("width: %i height: %i\n", k_width, k_height);
+            readInKernel(kernel, k, k_width * k_height);
+
+
+
+
+            free(k);
+        } else if (type == "gaussian-noise") {
+            printf("Gaussian Noise\n");
+        } else if (type == "salt-and-pepper") {
+            printf("Salt and Pepper Noise\n");
+        } else if (type == "histogram-equalization") {
+            printf("Histogram Equalization\n");
+        } else {
+            printf("Unsupported Operation\n");
+        }
+    }
+}
+
+// end not my work
+int main(int argc, char *argv[]) {
+    Json::Value json;
+    std::ifstream config("/home/jzheadley/CLionProjects/imageAnalysis/test/input.json", std::ifstream::binary);
+    config>>json;
+    string input_image_folder = json["image_folder"].asString();
+    string output_image_folder = json["output_dir"].asString();
+
+    bool saveFinalImages = json["saveFinalImages"].asBool();
+    bool saveIntermediateImages = json["saveIntermediateImages"].asBool();
+    printf("Input: %s\nOutput: %s\nSaving intermediates: %s\nSaving Finals: %s\n",
+           input_image_folder.c_str(),
+           output_image_folder.c_str(),
+           saveIntermediateImages ? "true" : "false",
+           saveFinalImages ? "true" : "false");
+    executeOperations(json);
+    testing();
+
 
     return 0;
 }
