@@ -39,7 +39,7 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     https://www.johndcook.com/blog/2009/08/24/algorithms-convert-color-grayscale/
     */
     int totalPixels = d_rgb->width * d_rgb->height;
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     cudaError_t err;
     switch (method) {
@@ -48,10 +48,6 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
             CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
             printf("Using the luminance method...%i %i %i %p %p\n", threadsPerBlock, blocksPerGrid, d_rgb->channels, d_gray->image, d_rgb->image);
             convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
-            err = cudaGetLastError();
-            if (err != cudaSuccess) {
-                printf("Error: %s\n", cudaGetErrorString(err));
-            }
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
