@@ -16,6 +16,7 @@ __global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, 
     int column = tid - ((tid / width) * width);
     if ((tid < numPixels)) {
         output[row * width + column] = (unsigned char) ((.21 * image[row * width + column]) + (.72 * image[row * width + column + numPixels]) + (.07 * image[row * width + column + (2 * numPixels)]));
+//        printf("%i %i\n", row, column);
     }
     return;
 }
@@ -26,6 +27,7 @@ __global__ void convertRGBToGrayscaleAverage(unsigned char *image, int width, in
     int column = tid - ((tid / width) * width);
     if ((tid < numPixels)) {
         output[row * width + column] = (unsigned char) ((image[row * width + column] + image[row * width + column + numPixels] + image[row * width + column + (2 * numPixels)]) / 3);
+//        printf("%i %i\n", row, column);
     }
     return;
 }
@@ -39,17 +41,23 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     int totalPixels = d_rgb->width * d_rgb->height;
     int threadsPerBlock = 256;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    cudaError_t err;
     switch (method) {
         case 0:
             // luminance method
             CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
-
+            printf("Using the luminance method...%i %i %i %p %p\n", threadsPerBlock, blocksPerGrid, d_rgb->channels, d_gray->image, d_rgb->image);
             convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
+            err = cudaGetLastError();
+            if (err != cudaSuccess) {
+                printf("Error: %s\n", cudaGetErrorString(err));
+            }
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
         case 1:
             // average method
+            printf("Using the average method...\n");
             CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
 
             convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
@@ -57,6 +65,7 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
             d_gray->height = d_rgb->height;
             break;
         default:
+            printf("WTF why are we defaulting?\n");
             break;
     }
 }

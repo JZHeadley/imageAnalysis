@@ -1,54 +1,56 @@
 {
   "image_folder": "/home/jzheadley/projects/classes/cmsc630/project1/Cancerous cell smears",
+  "input_image_filter": "",
   "saveIntermediateImages": false,
   "saveFinalImages": true,
-  "output_dir": "./output_images",
+  "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
+  "extract_channel": "gray",
   "operations": [
-    {
-      "type": "linear-filter",
-      "kernel": {
-        "width": 3,
-        "height": 3,
-        "values": [
-          1,
-          1,
-          1,
-          2,
-          1,
-          2,
-          1,
-          1,
-          1
-        ]
-      }
-    },
-    {
-      "type": "median-filter",
-      "kernel": {
-        "width": 3,
-        "height": 3,
-        "values": [
-          1,
-          1,
-          1,
-          2,
-          1,
-          2,
-          1,
-          1,
-          1
-        ]
-      }
-    },
-    {
-      "type": "gaussian-noise",
-      "std_dev": 1,
-      "mean": 1
-    },
-    {
-      "type": "salt-and-pepper",
-      "intensity": 1
-    },
+//    {
+//      "type": "linear-filter",
+//      "kernel": {
+//        "width": 3,
+//        "height": 3,
+//        "values": [
+//          1,
+//          1,
+//          1,
+//          2,
+//          1,
+//          2,
+//          1,
+//          1,
+//          1
+//        ]
+//      }
+//    },
+//    {
+//      "type": "median-filter",
+//      "kernel": {
+//        "width": 3,
+//        "height": 3,
+//        "values": [
+//          1,
+//          1,
+//          1,
+//          2,
+//          1,
+//          2,
+//          1,
+//          1,
+//          1
+//        ]
+//      }
+//    },
+//    {
+//      "type": "gaussian-noise",
+//      "std_dev": 1,
+//      "mean": 1
+//    },
+//    {
+//      "type": "salt-and-pepper",
+//      "intensity": 1
+//    },
     {
       "type": "histogram-equalization"
     }

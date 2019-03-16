@@ -201,6 +201,7 @@ void readInKernel(Json::Value kernel, int *k, int numValues) {
 }
 
 vector <string> getFileNames(string input_image_folder) {
+    // adapted from this https://stackoverflow.com/a/612176
     vector <string> files;
     DIR *dir;
     struct dirent *ent;
@@ -222,45 +223,117 @@ vector <string> getFileNames(string input_image_folder) {
 
 void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages) {
     vector <string> files = getFileNames(input_image_folder);
-
     const Json::Value &operations = json["operations"];
     int numOperations = operations.size();
     string curFilePath;
-    for (int k = 0; k < files.size(); k++) {
+    int k_width;
+    int k_height;
+    int *kern;
+    Mat mat;
+    int *h_histogram;
+    int *d_histogram;
+    int h_mappings[256];
+    cudaMallocHost(&h_histogram, sizeof(int) * 256);
+    RGBImage *h_rgbImage = new RGBImage;
+    RGBImage *d_rgbImage = new RGBImage;
+    Image *d_image = new Image;
+    Image *d_equalizedImage = new Image;
+    Image *h_image = new Image;
+    Mat *outputMat = new Mat;
+    vector<int> compression_params;
+    compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+    compression_params.push_back(9);
+
+    Image *h_equalizedImage = new Image;
+
+    for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
+
         curFilePath = files[k];
         printf("Working on image %s\n", curFilePath.c_str());
-        for (int i = 0; i < numOperations; i++) {
+        mat = imread(input_image_folder + "/" + curFilePath, CV_LOAD_IMAGE_COLOR);
+
+        convertMatToRGBImage(mat, h_rgbImage);
+
+        // copy host image to device
+        copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
+
+        // convert host image to grayscale
+        //TODO: Need to make it so that it checks the configs first to determine whether to extract a single color channel or convert to grayscale can read this out of the config now with the "extract_channel" option
+        convertRGBToGrayscale(d_rgbImage, d_image, 0);
+
+//        Image *h_grayImage = new Image;
+//        copyDeviceImageToHost(d_image, h_grayImage);
+//
+//        Mat *grayscale = new Mat;
+//        convertImageToMat(h_grayImage, grayscale);
+//        imshow("grayscaled with cuda", *grayscale);
+////     Loop until escape is pressed
+//        while (cvWaitKey(1) != '\33') {
+//
+//        }
+//
+
+
+        for (int i = 0; i < numOperations; i++) { // perform the operations on each image
             string type = operations[i]["type"].asString();
-//            printf("Operation %i: %s\n", i, type.c_str());
             if (type == "linear-filter") {
-//                printf("Linear Filter\n");
                 Json::Value kernel = operations[i]["kernel"];
-                int k_width = kernel["width"].asInt();
-                int k_height = kernel["height"].asInt();
-                int *k = (int *) malloc(sizeof(int) * k_width * k_height);
-                readInKernel(kernel, k, k_width * k_height);
+                k_width = kernel["width"].asInt();
+                k_height = kernel["height"].asInt();
+                kernel = (int *) malloc(sizeof(int) * k_width * k_height);
+                readInKernel(kernel, kern, k_width * k_height);
 
-
-                free(k);
+                free(kern);
             } else if (type == "median-filter") {
-//                printf("Median Filter\n");
                 Json::Value kernel = operations[i]["kernel"];
-                int k_width = kernel["width"].asInt();
-                int k_height = kernel["height"].asInt();
-                int *k = (int *) malloc(sizeof(int) * k_width * k_height);
-                readInKernel(kernel, k, k_width * k_height);
+                k_width = kernel["width"].asInt();
+                k_height = kernel["height"].asInt();
+                kern = (int *) malloc(sizeof(int) * k_width * k_height);
+                readInKernel(kernel, kern, k_width * k_height);
 
-
-                free(k);
+                free(kern);
             } else if (type == "gaussian-noise") {
 //                printf("Gaussian Noise\n");
             } else if (type == "salt-and-pepper") {
 //                printf("Salt and Pepper Noise\n");
             } else if (type == "histogram-equalization") {
 //                printf("Histogram Equalization\n");
+                calculateHistogram(d_image, h_histogram, d_histogram);
+
+                equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
+                equalizeImageWithHist(d_image, d_equalizedImage, h_mappings);
+
+//                copyDeviceImageToHost(d_equalizedImage, h_equalizedImage);
+//                Mat *equalizedMat = new Mat;
+//                convertImageToMat(h_equalizedImage, equalizedMat);
+//                imshow("equalized", *equalizedMat);
+//                while (cvWaitKey(1) != '\33') {
+//
+//                }
+//                d_image = d_equalizedImage;
             } else {
                 printf("Unsupported Operation\n");
             }
+            // copy images back to host and save intermediates if configured to do so...
+            if (saveIntermediateImages) {
+                copyDeviceImageToHost(d_image, h_image);
+                convertImageToMat(h_image, outputMat);
+                string outPath = output_image_folder + "/" + type + "-" + curFilePath;
+                printf("writing to %s\n", outPath.c_str());
+                imwrite(output_image_folder + "/" + type + "-" + curFilePath, *outputMat, compression_params);
+            }
+        }
+        // copy device image back to host and save it if configured to do so...
+        if (saveFinalImages) {
+            copyDeviceImageToHost(d_image, h_image);
+            convertImageToMat(h_image, outputMat);
+//            imshow("output", *outputMat);
+//            while (cvWaitKey(1) != '\33') {
+//
+//            }
+            string outPath = output_image_folder + "/" + curFilePath;
+            printf("writing to %s\n", outPath.c_str());
+            imwrite(outPath, *outputMat, compression_params);
         }
     }
 }
@@ -279,8 +352,8 @@ int main(int argc, char *argv[]) {
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
-    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages);
     testing();
+    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages);
 
 
     return 0;
