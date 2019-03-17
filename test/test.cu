@@ -19,14 +19,16 @@
 using namespace std;
 using namespace cv;
 
-//#define DEBUG_GRAYSCALE true
-#define DEBUG_GRAYSCALE false
-//#define DEBUG_HIST true
-#define DEBUG_HIST false
-//#define DEBUG_EQUALIZED true
-#define DEBUG_EQUALIZED false
+#define DEBUG_GRAYSCALE true
+//#define DEBUG_GRAYSCALE false
+#define DEBUG_HIST true
+//#define DEBUG_HIST false
+#define DEBUG_EQUALIZED true
+//#define DEBUG_EQUALIZED false
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
+
+vector<int> compression_params;
 
 void convertMatToRGBImage(Mat mat, RGBImage *output) {
     Mat bgr[3];
@@ -221,6 +223,17 @@ vector <string> getFileNames(string input_image_folder) {
 
 }
 
+void saveImage(string output_image_folder, Image *d_image, Image *h_image, Mat *outputMat, string type, string fileName) {
+    copyDeviceImageToHost(d_image, h_image);
+    convertImageToMat(h_image, outputMat);
+    string outPath = output_image_folder + "/" + fileName;
+    if (type.length() > 0) {
+        outPath = output_image_folder + "/" + type + "-" + fileName;
+    }
+    printf("writing to %s\n", outPath.c_str());
+    imwrite(outPath, *outputMat);//, compression_params);
+}
+
 void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages) {
     vector <string> files = getFileNames(input_image_folder);
     const Json::Value &operations = json["operations"];
@@ -240,9 +253,6 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Image *d_equalizedImage = new Image;
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
-    vector<int> compression_params;
-    compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
-    compression_params.push_back(9);
 
     Image *h_equalizedImage = new Image;
 
@@ -260,18 +270,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         // convert host image to grayscale
         //TODO: Need to make it so that it checks the configs first to determine whether to extract a single color channel or convert to grayscale can read this out of the config now with the "extract_channel" option
         convertRGBToGrayscale(d_rgbImage, d_image, 0);
-
-//        Image *h_grayImage = new Image;
-//        copyDeviceImageToHost(d_image, h_grayImage);
-//
-//        Mat *grayscale = new Mat;
-//        convertImageToMat(h_grayImage, grayscale);
-//        imshow("grayscaled with cuda", *grayscale);
-////     Loop until escape is pressed
-//        while (cvWaitKey(1) != '\33') {
-//
-//        }
-//
+        if (saveIntermediateImages) {
+            saveImage(output_image_folder, d_image, h_image, outputMat, "grayscale", curFilePath);
+        }
 
 
         for (int i = 0; i < numOperations; i++) { // perform the operations on each image
@@ -302,43 +303,26 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
                 equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
                 equalizeImageWithHist(d_image, d_equalizedImage, h_mappings);
-
-//                copyDeviceImageToHost(d_equalizedImage, h_equalizedImage);
-//                Mat *equalizedMat = new Mat;
-//                convertImageToMat(h_equalizedImage, equalizedMat);
-//                imshow("equalized", *equalizedMat);
-//                while (cvWaitKey(1) != '\33') {
-//
-//                }
-//                d_image = d_equalizedImage;
+                d_image->image = d_equalizedImage->image;
             } else {
                 printf("Unsupported Operation\n");
             }
             // copy images back to host and save intermediates if configured to do so...
             if (saveIntermediateImages) {
-                copyDeviceImageToHost(d_image, h_image);
-                convertImageToMat(h_image, outputMat);
-                string outPath = output_image_folder + "/" + type + "-" + curFilePath;
-                printf("writing to %s\n", outPath.c_str());
-                imwrite(output_image_folder + "/" + type + "-" + curFilePath, *outputMat, compression_params);
+                saveImage(output_image_folder, d_image, h_image, outputMat, type, curFilePath);
             }
         }
         // copy device image back to host and save it if configured to do so...
         if (saveFinalImages) {
-            copyDeviceImageToHost(d_image, h_image);
-            convertImageToMat(h_image, outputMat);
-//            imshow("output", *outputMat);
-//            while (cvWaitKey(1) != '\33') {
-//
-//            }
-            string outPath = output_image_folder + "/" + curFilePath;
-            printf("writing to %s\n", outPath.c_str());
-            imwrite(outPath, *outputMat, compression_params);
+            saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
         }
     }
 }
 
+
 int main(int argc, char *argv[]) {
+    compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+    compression_params.push_back(9);
     Json::Value json;
     std::ifstream config("/home/jzheadley/CLionProjects/imageAnalysis/test/input.json", std::ifstream::binary);
     config>>json;
@@ -352,7 +336,7 @@ int main(int argc, char *argv[]) {
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
-    testing();
+//    testing();
     executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages);
 
 

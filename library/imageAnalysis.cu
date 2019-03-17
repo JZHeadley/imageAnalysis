@@ -143,17 +143,6 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
 
 }
 
-// def histogramEqualization(image,histogram):
-//  pdf = calculatePdf(histogram,image.shape[0]*image.shape[1])
-//  cdf = calculateCdf(pdf)
-//  mapLookup = np.array(cdf * 255,dtype=int)
-//  shape = image.shape
-//  equalized = np.zeros(shape)
-//  for i in range(0,shape[0]):
-//      for j in range(0,shape[1]):
-//          equalized[i][j] = mapLookup[int(image[i][j])]
-//  print(mapLookup)
-
 void extractSingleColorChannel(RGBImage *rgb, Image *out, int color) {
     out->width = rgb->width;
     out->height = rgb->height;

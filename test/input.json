@@ -1,7 +1,7 @@
 {
   "image_folder": "/home/jzheadley/projects/classes/cmsc630/project1/Cancerous cell smears",
   "input_image_filter": "",
-  "saveIntermediateImages": false,
+  "saveIntermediateImages": true,
   "saveFinalImages": true,
   "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
   "extract_channel": "gray",
