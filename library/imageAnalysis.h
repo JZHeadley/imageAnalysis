@@ -1,8 +1,6 @@
 #ifndef IMAGEANALYSIS_LIBRARY_H
 #define IMAGEANALYSIS_LIBRARY_H
 
-#include <curand.h>
-#include <curand_kernel.h>
 
 // Declaring my own types so I don't have to link OpenCV to my library even though its probably about the same as theirs just with fewer features
 // Should be a little more easier to use whatever library you want to read in with as well since it just needs to be converted to this format
@@ -51,7 +49,7 @@ void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHei
 
 void cleanUp(Image *image, RGBImage *rgbImage, Image *tempImage);
 
-void saltAndPepperNoise(Image *image, Image *output, int level, curandState *d_states);
+void saltAndPepperNoise(Image *image, Image *output, int level);
 
 /**
  *
@@ -63,7 +61,5 @@ void saltAndPepperNoise(Image *image, Image *output, int level, curandState *d_s
  *              2 for blue
  */
 void extractSingleColorChannel(RGBImage *rgb, Image *out, int color);
-
-void setupRandomness(curandState *d_states, int totalPixels);
 
 #endif

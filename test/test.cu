@@ -284,8 +284,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Image *d_tempImage = new Image;
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
-    curandState *d_states;
-    bool randomnessSet = false;
+
     Image *h_equalizedImage = new Image;
 
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
@@ -345,14 +344,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 ////                printf("Gaussian Noise\n");
             } else if (type == "salt-and-pepper") {
                 int level = operations[i]["intensity"].asInt();
-                if (!randomnessSet) {
-                    int totalPixels = d_image->width * d_image->height;
-                    cudaMalloc(&d_states, sizeof(curandState) * totalPixels); // need a random state for each thread
-                    setupRandomness(d_states, totalPixels);
-                    randomnessSet = true;
-                }
-
-                saltAndPepperNoise(d_image, d_tempImage, level, d_states);
+                saltAndPepperNoise(d_image, d_tempImage, level);
                 d_image->image = d_tempImage->image;
 //                printf("Salt and Pepper Noise\n");
             } else if (type == "histogram-equalization") {
@@ -376,7 +368,6 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         if (saveFinalImages) {
             saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
         }
-        cudaFree(d_states);
         cleanUp(d_image, d_rgbImage, d_tempImage);
     }
 }

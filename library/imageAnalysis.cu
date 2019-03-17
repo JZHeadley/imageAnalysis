@@ -6,6 +6,8 @@
 
 #include <omp.h>
 
+#include <curand.h>
+#include <curand_kernel.h>
 #include <math.h>
 
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
@@ -283,6 +285,17 @@ void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHei
     CUDA_CHECK_RETURN(cudaFree(d_filteredVals));
 }
 
+
+__global__ void setup_kernel(curandState *state) {
+//    int id = threadIdx.x + blockIdx.x * 64;
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+
+    /* Each thread gets same seed, a different sequence
+       number, no offset */
+    curand_init(1234, tid, 0, &state[tid]);
+    return;
+}
+
 __global__ void generateSaltAndPepper(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, curandState *states, int level) {
     // VERY loosely based off https://www.projectrhea.org/rhea/index.php/How_to_Create_Salt_and_Pepper_Noise_in_an_Image
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -300,13 +313,14 @@ __global__ void generateSaltAndPepper(unsigned char *image, unsigned char *outpu
                 output[row * width + column] = 0;
             }
         } else {
+            printf("Setting original value: %i \n", image[row * width + column]);
             output[row * width + column] = image[row * width + column];
         }
     }
     return;
 }
 
-void saltAndPepperNoise(Image *image, Image *output, int level, curandState *d_states) {
+void saltAndPepperNoise(Image *image, Image *output, int level) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
@@ -314,25 +328,15 @@ void saltAndPepperNoise(Image *image, Image *output, int level, curandState *d_s
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
 
+    curandState *d_states;
+    cudaMalloc(&d_states, sizeof(curandState) * totalPixels); // need a random state for each thread
+    setup_kernel<< < threadsPerBlock, blocksPerGrid>> > (d_states);
+
     generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_states, level);
 
+    CUDA_CHECK_RETURN(cudaFree(d_states));
 }
 
-__global__ void setup_kernel(curandState *state) {
-//    int id = threadIdx.x + blockIdx.x * 64;
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-
-    /* Each thread gets same seed, a different sequence
-       number, no offset */
-    curand_init(1234, tid, 0, &state[tid]);
-    return;
-}
-
-void setupRandomness(curandState *d_states, int totalPixels) {
-    int threadsPerBlock = 512;
-    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
-    setup_kernel<< < threadsPerBlock, blocksPerGrid>> > (d_states);
-}
 
 void cleanUp(Image *image, RGBImage *rgbImage, Image *tempImage) {
 //    CUDA_CHECK_RETURN(cudaFree(image->image));
