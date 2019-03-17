@@ -46,14 +46,12 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
         case 0:
             // luminance method
             CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
-            printf("Using the luminance method...%i %i %i %p %p\n", threadsPerBlock, blocksPerGrid, d_rgb->channels, d_gray->image, d_rgb->image);
             convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
         case 1:
             // average method
-            printf("Using the average method...\n");
             CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
 
             convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
@@ -217,45 +215,36 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
         if (row < aboveBelow || row > height - aboveBelow || column < sideToSide || column > width - sideToSide) {
             output[row * width + column] = image[row * width + column]; // handles when our filter would go outside the edge of the image
         } else {
-            int k = 0, l = 0;
+            int k = 0;
             for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
                 for (int j = column - sideToSide; j <= column + sideToSide; j++) {
-                    filteredVals[(row * column * kernLen) + k * kWidth + l] = image[i * width + j] * kernel[k * kWidth + l];
-//                    if (tid == totalPixels - 1) {
-//                        printf("%i ", image[i * width + j] * kernel[k * kWidth + 1]);
+                    filteredVals[(row * column * kernLen) + k] = image[i * width + j] * kernel[k];
+//                    if (tid == totalPixels - width * 3 + 2) {
+//                        printf("%i ", image[i * width + j] * kernel[k]);
+//                        printf("%i\n", filteredVals[(row * column * kernLen) + k]);
 //                    }
-                    l++;
+                    k++;
                 }
-                k++;
             }
-//            if (tid == totalPixels - 1) {
+//            if (tid == totalPixels - width * 3 + 2) {
 //                printf("\n");
 //            }
-//            if (tid == totalPixels - 1) {
-//                for (int q = 0; q < kernLen; q++) {
-//                    printf("%i ", filteredVals[(row * column * kernLen) +q]);
-//                }
-//                printf("\n");
-//            }
-            // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on a max a few hundred items is the least of my worries.
+            if (tid == totalPixels - width * 3 + 2) {
+                for (int q = 0; q < kernLen; q++) {
+                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
+                }
+                printf("\n");
+            }
+            // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on at max a few hundred items is the least of my worries.
             // could be sped up with a quicksort or something but thats a lot harder...
             int swap = 0;
-            for (int c = 0; c < kernLen - 1; c++) {
-                for (int d = 0; d < kernLen - c - 1; d++) {
-                    if (filteredVals[(row * column * kernLen) + d] > filteredVals[(row * column * kernLen) + d + 1]) /* For decreasing order use < */
-                    {
-                        swap = filteredVals[d];
-                        filteredVals[(row * column * kernLen) + d] = filteredVals[(row * column * kernLen) + d + 1];
-                        filteredVals[(row * column * kernLen) + d + 1] = swap;
-                    }
+
+            if (tid == totalPixels - width * 3 + 2) {
+                for (int q = 0; q < kernLen; q++) {
+                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
                 }
+                printf("\n");
             }
-//            if (tid == totalPixels - 1) {
-//                for (int q = 0; q < kernLen; q++) {
-//                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
-//                }
-//                printf("\n");
-//            }
 
             output[row * width + column] = (unsigned char) filteredVals[kernLen / 2];
         }
@@ -275,7 +264,6 @@ void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHei
     CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(int) * kWidth * kHeight, cudaMemcpyHostToDevice));
     int *d_filteredVals;
     CUDA_CHECK_RETURN(cudaMalloc(&d_filteredVals, sizeof(int) * kWidth * kHeight * totalPixels));
-    //TODO: make the median filter..
     medianFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight, d_filteredVals);
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
     CUDA_CHECK_RETURN(cudaFree(d_filteredVals));

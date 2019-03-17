@@ -19,12 +19,16 @@
 using namespace std;
 using namespace cv;
 
-#define DEBUG_GRAYSCALE true
-//#define DEBUG_GRAYSCALE false
-#define DEBUG_HIST true
-//#define DEBUG_HIST false
-#define DEBUG_EQUALIZED true
-//#define DEBUG_EQUALIZED false
+//#define DEBUG_GRAYSCALE true
+#define DEBUG_GRAYSCALE false
+//#define DEBUG_HIST true
+#define DEBUG_HIST false
+//#define DEBUG_EQUALIZED true
+#define DEBUG_EQUALIZED false
+#define DEBUG_LINFILTER true
+//#define DEBUG_LINFILTER false
+#define DEBUG_MEDFILTER true
+//#define DEBUG_MEDFILTER false
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
 
@@ -192,6 +196,33 @@ void testing() {
         drawHistogram(h_histogram2, 256);
 
     }
+    Image *d_linFilImage = new Image;
+    int kern[9] = {-1, 0, 1, -1, 0, 1, -1, 0, 1};
+    linearFilter(d_equalizedImage, d_linFilImage, kern, 3, 3);
+    if (DEBUG_LINFILTER) {
+        Image *h_linFilImage = new Image;
+        copyDeviceImageToHost(d_linFilImage, h_linFilImage);
+        Mat *linFilMat = new Mat;
+        convertImageToMat(h_linFilImage, linFilMat);
+        imshow("Linear Filter", *linFilMat);
+        while (cvWaitKey(1) != '\33') {
+
+        }
+    }
+    Image *d_medFilImage = new Image;
+    int medKern[9] = {1, 0, 1, 1, 0, 1, 1, 0, 1};
+    medianFilter(d_equalizedImage, d_medFilImage, medKern, 3, 3);
+    if (DEBUG_MEDFILTER) {
+        Image *h_medFilImage = new Image;
+        copyDeviceImageToHost(d_medFilImage, h_medFilImage);
+        Mat *medFilMat = new Mat;
+        convertImageToMat(h_medFilImage, medFilMat);
+        imshow("Median Filter", *medFilMat);
+        while (cvWaitKey(1) != '\33') {
+
+        }
+    }
+
 }
 
 void readInKernel(Json::Value kernel, int *k, int numValues) {
@@ -334,7 +365,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         if (saveFinalImages) {
             saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
         }
-        cleanUp(d_image,d_rgbImage,d_tempImage);
+        cleanUp(d_image, d_rgbImage, d_tempImage);
     }
 }
 
@@ -356,8 +387,8 @@ int main(int argc, char *argv[]) {
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
-//    testing();
-    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel);
+    testing();
+//    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel);
 
 
     return 0;

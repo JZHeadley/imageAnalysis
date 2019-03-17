@@ -4,44 +4,48 @@
   "saveIntermediateImages": true,
   "saveFinalImages": true,
   "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
-  "extract_channel": "grey", // red, blue, green, or grey
+  // red, blue, green, or grey
+  "extract_channel": "grey",
   "operations": [
+    {
+      "type": "histogram-equalization"
+    },
     {
       "type": "linear-filter",
       "kernel": {
         "width": 3,
         "height": 3,
         "values": [
+          -1,
+          0,
           1,
+          -1,
+          0,
           1,
-          1,
-          2,
-          1,
-          2,
-          1,
-          1,
+          -1,
+          0,
           1
         ]
       }
     },
-//    {
-//      "type": "median-filter",
-//      "kernel": {
-//        "width": 3,
-//        "height": 3,
-//        "values": [
-//          1,
-//          1,
-//          1,
-//          2,
-//          1,
-//          2,
-//          1,
-//          1,
-//          1
-//        ]
-//      }
-//    },
+    {
+      "type": "median-filter",
+      "kernel": {
+        "width": 3,
+        "height": 3,
+        "values": [
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1
+        ]
+      }
+    },
     {
       "type": "gaussian-noise",
       "std_dev": 1,
@@ -50,9 +54,6 @@
     {
       "type": "salt-and-pepper",
       "intensity": 1
-    },
-    {
-      "type": "histogram-equalization"
     }
   ]
 }
