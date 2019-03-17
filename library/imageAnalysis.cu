@@ -6,9 +6,12 @@
 
 #include <omp.h>
 
+#include <math.h>
+
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value);
+
 
 __global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, int height, int numPixels, int channels, unsigned char *output) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -175,13 +178,12 @@ __global__ void linearFilter(unsigned char *image, unsigned char *output, int wi
             output[row * width + column] = image[row * width + column]; // handles when our filter would go outside the edge of the image
         } else {
             int sum = 0;
-            int k = 0, l = 0;
+            int k = 0;
             for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
                 for (int j = column - sideToSide; j <= column + sideToSide; j++) {
-                    sum += image[i * width + j] * kernel[k * kWidth + l];
-                    l++;
+                    sum += image[i * width + j] * kernel[k];
+                    k++;
                 }
-                k++;
             }
             output[row * width + column] = (unsigned char) (sum / (kWidth * kHeight));
         }
@@ -237,8 +239,17 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
             }
             // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on at max a few hundred items is the least of my worries.
             // could be sped up with a quicksort or something but thats a lot harder...
-            int swap = 0;
-
+            int base = (row * column * kernLen);
+            int j, key;
+            for (int i = 0; i < kernLen; i++) {
+                j = i - 1;
+                key = filteredVals[base + i];
+                while (j >= 0 && filteredVals[base + j] > key) {
+                    filteredVals[base + j + 1] = filteredVals[base + j];
+                    j--;
+                }
+                filteredVals[base + j + 1] = key;
+            }
             if (tid == totalPixels - width * 3 + 2) {
                 for (int q = 0; q < kernLen; q++) {
                     printf("%i ", filteredVals[(row * column * kernLen) + q]);
@@ -246,7 +257,10 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
                 printf("\n");
             }
 
-            output[row * width + column] = (unsigned char) filteredVals[kernLen / 2];
+            output[row * width + column] = (unsigned char) filteredVals[base + kernLen / 2];
+            if (tid == totalPixels - width * 3 + 2) {
+                printf("median is %i\n", output[row * width + column]);
+            }
         }
     }
     return;
@@ -267,6 +281,57 @@ void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHei
     medianFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight, d_filteredVals);
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
     CUDA_CHECK_RETURN(cudaFree(d_filteredVals));
+}
+
+__global__ void generateSaltAndPepper(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, curandState *states, int level) {
+    // VERY loosely based off https://www.projectrhea.org/rhea/index.php/How_to_Create_Salt_and_Pepper_Noise_in_an_Image
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if (tid < totalPixels) {
+        curandState localState = states[tid];
+        int randVal = curand_uniform(&localState) * (level - 0 + .999999);
+//        printf("%f\n", randVal);
+        if (randVal == level) {
+            randVal = curand_uniform(&localState);
+            if (randVal > .5) {
+                output[row * width + column] = 255;
+            } else {
+                output[row * width + column] = 0;
+            }
+        } else {
+            output[row * width + column] = image[row * width + column];
+        }
+    }
+    return;
+}
+
+void saltAndPepperNoise(Image *image, Image *output, int level, curandState *d_states) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
+
+    generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_states, level);
+
+}
+
+__global__ void setup_kernel(curandState *state) {
+//    int id = threadIdx.x + blockIdx.x * 64;
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+
+    /* Each thread gets same seed, a different sequence
+       number, no offset */
+    curand_init(1234, tid, 0, &state[tid]);
+    return;
+}
+
+void setupRandomness(curandState *d_states, int totalPixels) {
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    setup_kernel<< < threadsPerBlock, blocksPerGrid>> > (d_states);
 }
 
 void cleanUp(Image *image, RGBImage *rgbImage, Image *tempImage) {

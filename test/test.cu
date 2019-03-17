@@ -25,10 +25,10 @@ using namespace cv;
 #define DEBUG_HIST false
 //#define DEBUG_EQUALIZED true
 #define DEBUG_EQUALIZED false
-#define DEBUG_LINFILTER true
-//#define DEBUG_LINFILTER false
-#define DEBUG_MEDFILTER true
-//#define DEBUG_MEDFILTER false
+//#define DEBUG_LINFILTER true
+#define DEBUG_LINFILTER false
+//#define DEBUG_MEDFILTER true
+#define DEBUG_MEDFILTER false
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
 
@@ -210,7 +210,7 @@ void testing() {
         }
     }
     Image *d_medFilImage = new Image;
-    int medKern[9] = {1, 0, 1, 1, 0, 1, 1, 0, 1};
+    int medKern[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
     medianFilter(d_equalizedImage, d_medFilImage, medKern, 3, 3);
     if (DEBUG_MEDFILTER) {
         Image *h_medFilImage = new Image;
@@ -284,7 +284,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Image *d_tempImage = new Image;
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
-
+    curandState *d_states;
+    bool randomnessSet = false;
     Image *h_equalizedImage = new Image;
 
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
@@ -342,8 +343,18 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 free(kern);
 //            } else if (type == "gaussian-noise") {
 ////                printf("Gaussian Noise\n");
-//            } else if (type == "salt-and-pepper") {
-////                printf("Salt and Pepper Noise\n");
+            } else if (type == "salt-and-pepper") {
+                int level = operations[i]["intensity"].asInt();
+                if (!randomnessSet) {
+                    int totalPixels = d_image->width * d_image->height;
+                    cudaMalloc(&d_states, sizeof(curandState) * totalPixels); // need a random state for each thread
+                    setupRandomness(d_states, totalPixels);
+                    randomnessSet = true;
+                }
+
+                saltAndPepperNoise(d_image, d_tempImage, level, d_states);
+                d_image->image = d_tempImage->image;
+//                printf("Salt and Pepper Noise\n");
             } else if (type == "histogram-equalization") {
 //                printf("Histogram Equalization\n");
                 calculateHistogram(d_image, h_histogram, d_histogram);
@@ -365,6 +376,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         if (saveFinalImages) {
             saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
         }
+        cudaFree(d_states);
         cleanUp(d_image, d_rgbImage, d_tempImage);
     }
 }
@@ -387,8 +399,8 @@ int main(int argc, char *argv[]) {
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
-    testing();
-//    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel);
+//    testing();
+    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel);
 
 
     return 0;
