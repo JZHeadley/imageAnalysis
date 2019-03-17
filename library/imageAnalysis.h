@@ -33,7 +33,6 @@ void copyDeviceRGBImageToHost(RGBImage *device, RGBImage *host);
 
 void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method);
 
-
 void copyHostRGBImageToDevice(RGBImage *host, RGBImage *device);
 
 void copyDeviceImageToHost(Image *device, Image *host);
@@ -43,6 +42,12 @@ void calculateHistogram(Image *image, int *h_histogram, int *d_histogram);
 void equalizeHistogram(int *original, int *mappings, int numPixels);
 
 void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mappings);
+
+void linearFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight);
+
+void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight);
+
+void cleanUp(Image *image, RGBImage *rgbImage, Image *tempImage);
 
 /**
  *

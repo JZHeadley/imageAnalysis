@@ -66,6 +66,28 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     }
 }
 
+void extractSingleColorChannel(RGBImage *rgb, Image *out, int color) {
+    out->width = rgb->width;
+    out->height = rgb->height;
+    int totalPixels = rgb->width * rgb->height;
+    //TODO: Memory leaks right here probably should fix but meh it should work well enough like this...
+    switch (color) {
+        case 0: // red
+            out->image = rgb->image;
+            break;
+        case 1: // green
+            out->image = rgb->image + totalPixels;
+
+            break;
+        case 2: // blue
+            out->image = rgb->image + (2 * totalPixels);
+            break;
+        default:
+            printf("invalid option\n");
+            break;
+    }
+}
+
 __global__ void calcHistogram(unsigned char *data, int width, int numPixels, int *histogram) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
@@ -139,30 +161,131 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
     CUDA_CHECK_RETURN(cudaMemcpy(d_mappings, h_mappings, sizeof(int) * 256, cudaMemcpyHostToDevice));
     CUDA_CHECK_RETURN(cudaMalloc(&(d_equalizedImage->image), sizeof(unsigned char) * image->width * image->height));
     equalizeImage<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, image->width, totalPixels, d_mappings, d_equalizedImage->image);
+    CUDA_CHECK_RETURN(cudaFree(d_mappings));
 
 
 }
 
-void extractSingleColorChannel(RGBImage *rgb, Image *out, int color) {
-    out->width = rgb->width;
-    out->height = rgb->height;
-    int totalPixels = rgb->width * rgb->height;
-    //TODO: Memory leaks right here probably should fix but meh it should work well enough like this...
-    switch (color) {
-        case 0: // red
-            out->image = rgb->image;
-            break;
-        case 1: // green
-            out->image = rgb->image + totalPixels;
-
-            break;
-        case 2: // blue
-            out->image = rgb->image + (2 * totalPixels);
-            break;
-        default:
-            printf("invalid option\n");
-            break;
+__global__ void linearFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *kernel, int kWidth, int kHeight) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if ((tid < totalPixels)) {
+        int aboveBelow = (kHeight - 1) / 2;
+        int sideToSide = (kWidth - 1) / 2;
+        if (row < aboveBelow || row > height - aboveBelow || column < sideToSide || column > width - sideToSide) {
+            output[row * width + column] = image[row * width + column]; // handles when our filter would go outside the edge of the image
+        } else {
+            int sum = 0;
+            int k = 0, l = 0;
+            for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
+                for (int j = column - sideToSide; j <= column + sideToSide; j++) {
+                    sum += image[i * width + j] * kernel[k * kWidth + l];
+                    l++;
+                }
+                k++;
+            }
+            output[row * width + column] = (unsigned char) (sum / (kWidth * kHeight));
+        }
     }
+    return;
+}
+
+void linearFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
+    int *d_kernel;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(int) * kWidth * kHeight));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(int) * kWidth * kHeight, cudaMemcpyHostToDevice));
+    linearFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight);
+    CUDA_CHECK_RETURN(cudaFree(d_kernel));
+
+}
+
+__global__ void medianFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *kernel, int kWidth, int kHeight, int *filteredVals) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    int kernLen = kWidth * kHeight;
+    if ((tid < totalPixels)) {
+        int aboveBelow = (kHeight - 1) / 2;
+        int sideToSide = (kWidth - 1) / 2;
+        if (row < aboveBelow || row > height - aboveBelow || column < sideToSide || column > width - sideToSide) {
+            output[row * width + column] = image[row * width + column]; // handles when our filter would go outside the edge of the image
+        } else {
+            int k = 0, l = 0;
+            for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
+                for (int j = column - sideToSide; j <= column + sideToSide; j++) {
+                    filteredVals[(row * column * kernLen) + k * kWidth + l] = image[i * width + j] * kernel[k * kWidth + l];
+//                    if (tid == totalPixels - 1) {
+//                        printf("%i ", image[i * width + j] * kernel[k * kWidth + 1]);
+//                    }
+                    l++;
+                }
+                k++;
+            }
+//            if (tid == totalPixels - 1) {
+//                printf("\n");
+//            }
+//            if (tid == totalPixels - 1) {
+//                for (int q = 0; q < kernLen; q++) {
+//                    printf("%i ", filteredVals[(row * column * kernLen) +q]);
+//                }
+//                printf("\n");
+//            }
+            // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on a max a few hundred items is the least of my worries.
+            // could be sped up with a quicksort or something but thats a lot harder...
+            int swap = 0;
+            for (int c = 0; c < kernLen - 1; c++) {
+                for (int d = 0; d < kernLen - c - 1; d++) {
+                    if (filteredVals[(row * column * kernLen) + d] > filteredVals[(row * column * kernLen) + d + 1]) /* For decreasing order use < */
+                    {
+                        swap = filteredVals[d];
+                        filteredVals[(row * column * kernLen) + d] = filteredVals[(row * column * kernLen) + d + 1];
+                        filteredVals[(row * column * kernLen) + d + 1] = swap;
+                    }
+                }
+            }
+//            if (tid == totalPixels - 1) {
+//                for (int q = 0; q < kernLen; q++) {
+//                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
+//                }
+//                printf("\n");
+//            }
+
+            output[row * width + column] = (unsigned char) filteredVals[kernLen / 2];
+        }
+    }
+    return;
+}
+
+void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
+    int *d_kernel;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(int) * kWidth * kHeight));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(int) * kWidth * kHeight, cudaMemcpyHostToDevice));
+    int *d_filteredVals;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_filteredVals, sizeof(int) * kWidth * kHeight * totalPixels));
+    //TODO: make the median filter..
+    medianFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight, d_filteredVals);
+    CUDA_CHECK_RETURN(cudaFree(d_kernel));
+    CUDA_CHECK_RETURN(cudaFree(d_filteredVals));
+}
+
+void cleanUp(Image *image, RGBImage *rgbImage, Image *tempImage) {
+//    CUDA_CHECK_RETURN(cudaFree(image->image));
+//    CUDA_CHECK_RETURN(cudaFree(rgbImage->image));
+//    CUDA_CHECK_RETURN(cudaFree(tempImage->image));
+
 }
 
 void copyHostImageToDevice(Image *host, Image *device) {

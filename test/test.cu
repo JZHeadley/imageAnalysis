@@ -234,7 +234,7 @@ void saveImage(string output_image_folder, Image *d_image, Image *h_image, Mat *
     imwrite(outPath, *outputMat);//, compression_params);
 }
 
-void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages) {
+void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages, string extract_channel) {
     vector <string> files = getFileNames(input_image_folder);
     const Json::Value &operations = json["operations"];
     int numOperations = operations.size();
@@ -250,7 +250,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     RGBImage *h_rgbImage = new RGBImage;
     RGBImage *d_rgbImage = new RGBImage;
     Image *d_image = new Image;
-    Image *d_equalizedImage = new Image;
+    Image *d_tempImage = new Image;
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
 
@@ -264,25 +264,39 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
         convertMatToRGBImage(mat, h_rgbImage);
 
-        // copy host image to device
-        copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
-
-        // convert host image to grayscale
-        //TODO: Need to make it so that it checks the configs first to determine whether to extract a single color channel or convert to grayscale can read this out of the config now with the "extract_channel" option
-        convertRGBToGrayscale(d_rgbImage, d_image, 0);
+        // convert image to a single color spectrum
+        if (extract_channel == "grey") {
+            copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
+            convertRGBToGrayscale(d_rgbImage, d_image, 0);
+        } else if (extract_channel == "red") {
+            extractSingleColorChannel(h_rgbImage, h_image, 0);
+            copyHostImageToDevice(h_image, d_image);
+        } else if (extract_channel == "green") {
+            extractSingleColorChannel(h_rgbImage, h_image, 1);
+            copyHostImageToDevice(h_image, d_image);
+        } else if (extract_channel == "blue") {
+            extractSingleColorChannel(h_rgbImage, h_image, 2);
+            copyHostImageToDevice(h_image, d_image);
+        } else {
+            printf("Unsupported color option: %s\n", extract_channel.c_str());
+            exit(-10);
+        }
         if (saveIntermediateImages) {
-            saveImage(output_image_folder, d_image, h_image, outputMat, "grayscale", curFilePath);
+            saveImage(output_image_folder, d_image, h_image, outputMat, extract_channel, curFilePath);
         }
 
-
         for (int i = 0; i < numOperations; i++) { // perform the operations on each image
+            bool supported = true;
+
             string type = operations[i]["type"].asString();
             if (type == "linear-filter") {
                 Json::Value kernel = operations[i]["kernel"];
                 k_width = kernel["width"].asInt();
                 k_height = kernel["height"].asInt();
-                kernel = (int *) malloc(sizeof(int) * k_width * k_height);
+                kern = (int *) malloc(sizeof(int) * k_width * k_height);
                 readInKernel(kernel, kern, k_width * k_height);
+                linearFilter(d_image, d_tempImage, kern, k_width, k_height);
+                d_image->image = d_tempImage->image;
 
                 free(kern);
             } else if (type == "median-filter") {
@@ -291,31 +305,36 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 k_height = kernel["height"].asInt();
                 kern = (int *) malloc(sizeof(int) * k_width * k_height);
                 readInKernel(kernel, kern, k_width * k_height);
+                medianFilter(d_image, d_tempImage, kern, k_width, k_height);
+                d_image->image = d_tempImage->image;
 
                 free(kern);
-            } else if (type == "gaussian-noise") {
-//                printf("Gaussian Noise\n");
-            } else if (type == "salt-and-pepper") {
-//                printf("Salt and Pepper Noise\n");
+//            } else if (type == "gaussian-noise") {
+////                printf("Gaussian Noise\n");
+//            } else if (type == "salt-and-pepper") {
+////                printf("Salt and Pepper Noise\n");
             } else if (type == "histogram-equalization") {
 //                printf("Histogram Equalization\n");
                 calculateHistogram(d_image, h_histogram, d_histogram);
 
                 equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
-                equalizeImageWithHist(d_image, d_equalizedImage, h_mappings);
-                d_image->image = d_equalizedImage->image;
+                equalizeImageWithHist(d_image, d_tempImage, h_mappings);
+                d_image->image = d_tempImage->image;
             } else {
                 printf("Unsupported Operation\n");
+                supported = false;
             }
             // copy images back to host and save intermediates if configured to do so...
-            if (saveIntermediateImages) {
+            if (saveIntermediateImages && supported) {
                 saveImage(output_image_folder, d_image, h_image, outputMat, type, curFilePath);
             }
+            supported = true;
         }
         // copy device image back to host and save it if configured to do so...
         if (saveFinalImages) {
             saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
         }
+        cleanUp(d_image,d_rgbImage,d_tempImage);
     }
 }
 
@@ -328,6 +347,7 @@ int main(int argc, char *argv[]) {
     config>>json;
     string input_image_folder = json["image_folder"].asString();
     string output_image_folder = json["output_dir"].asString();
+    string extract_channel = json["extract_channel"].asString();
 
     bool saveFinalImages = json["saveFinalImages"].asBool();
     bool saveIntermediateImages = json["saveIntermediateImages"].asBool();
@@ -337,7 +357,7 @@ int main(int argc, char *argv[]) {
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
 //    testing();
-    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages);
+    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel);
 
 
     return 0;
