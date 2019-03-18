@@ -54,7 +54,7 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
         case 0:
             // luminance method
             CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
-            convertRGBToGra*yscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
+            convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
@@ -317,11 +317,21 @@ __global__ void generateSaltAndPepper(unsigned char *image, unsigned char *outpu
                 output[row * width + column] = 0;
             }
         } else {
-            printf("Setting original value: %i \n", image[row * width + column]);
+//            printf("Setting original value: %i \n", image[row * width + column]);
             output[row * width + column] = image[row * width + column];
         }
     }
     return;
+}
+
+curandState *d_states;
+
+void setupRandomness(Image *image) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    cudaMalloc(&d_states, sizeof(curandState) * totalPixels); // need a random state for each thread
+    setup_kernel<< < threadsPerBlock, blocksPerGrid>> > (d_states);
 }
 
 void saltAndPepperNoise(Image *image, Image *output, int level) {
@@ -332,13 +342,10 @@ void saltAndPepperNoise(Image *image, Image *output, int level) {
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
 
-    curandState *d_states;
-    cudaMalloc(&d_states, sizeof(curandState) * totalPixels); // need a random state for each thread
-    setup_kernel<< < threadsPerBlock, blocksPerGrid>> > (d_states);
 
     generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_states, level);
 
-    CUDA_CHECK_RETURN(cudaFree(d_states));
+//    CUDA_CHECK_RETURN(cudaFree(d_states));
 }
 
 

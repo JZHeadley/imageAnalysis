@@ -46,14 +46,14 @@
         ]
       }
     },
-//    {
-//      "type": "gaussian-noise",
-//      "std_dev": 1,
-//      "mean": 1
-//    },
+    {
+      "type": "gaussian-noise",
+      "std_dev": 1,
+      "mean": 1
+    },
     {
       "type": "salt-and-pepper",
-      "intensity": 10
+      "intensity": 1
     },
     {
       "type": "quantization",

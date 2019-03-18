@@ -286,7 +286,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Mat *outputMat = new Mat;
 
     Image *h_equalizedImage = new Image;
-
+    bool randombessSet = false;
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
 
         curFilePath = files[k];
@@ -314,6 +314,10 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         }
         if (saveIntermediateImages) {
             saveImage(output_image_folder, d_image, h_image, outputMat, extract_channel, curFilePath);
+        }
+        if (!randomnessSet) {
+            setupRandomness(d_image);
+            randomnessSet = true;
         }
 
         for (int i = 0; i < numOperations; i++) { // perform the operations on each image

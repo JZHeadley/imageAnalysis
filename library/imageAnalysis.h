@@ -62,4 +62,6 @@ void saltAndPepperNoise(Image *image, Image *output, int level);
  */
 void extractSingleColorChannel(RGBImage *rgb, Image *out, int color);
 
+void setupRandomness(Image *image);
+
 #endif
