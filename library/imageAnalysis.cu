@@ -169,6 +169,7 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
 
 }
 
+//TODO: convert this to not an average filter and do normalization on the result of this instead of averaging.
 __global__ void linearFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *kernel, int kWidth, int kHeight) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
@@ -177,7 +178,7 @@ __global__ void linearFilter(unsigned char *image, unsigned char *output, int wi
         int aboveBelow = (kHeight - 1) / 2;
         int sideToSide = (kWidth - 1) / 2;
         if (row < aboveBelow || row > height - aboveBelow || column < sideToSide || column > width - sideToSide) {
-            output[row * width + column] = image[row * width + column]; // handles when our filter would go outside the edge of the image
+            output[row * width + column] = 255;//image[row * width + column]; // handles when our filter would go outside the edge of the image
         } else {
             int sum = 0;
             int k = 0;
@@ -233,12 +234,12 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
 //            if (tid == totalPixels - width * 3 + 2) {
 //                printf("\n");
 //            }
-            if (tid == totalPixels - width * 3 + 2) {
-                for (int q = 0; q < kernLen; q++) {
-                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
-                }
-                printf("\n");
-            }
+//            if (tid == totalPixels - width * 3 + 2) {
+//                for (int q = 0; q < kernLen; q++) {
+//                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
+//                }
+//                printf("\n");
+//            }
             // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on at max a few hundred items is the least of my worries.
             // could be sped up with a quicksort or something but thats a lot harder...
             int base = (row * column * kernLen);
@@ -252,17 +253,17 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
                 }
                 filteredVals[base + j + 1] = key;
             }
-            if (tid == totalPixels - width * 3 + 2) {
-                for (int q = 0; q < kernLen; q++) {
-                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
-                }
-                printf("\n");
-            }
+//            if (tid == totalPixels - width * 3 + 2) {
+//                for (int q = 0; q < kernLen; q++) {
+//                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
+//                }
+//                printf("\n");
+//            }
 
             output[row * width + column] = (unsigned char) filteredVals[base + kernLen / 2];
-            if (tid == totalPixels - width * 3 + 2) {
-                printf("median is %i\n", output[row * width + column]);
-            }
+//            if (tid == totalPixels - width * 3 + 2) {
+//                printf("median is %i\n", output[row * width + column]);
+//            }
         }
     }
     return;
