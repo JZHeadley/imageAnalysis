@@ -346,11 +346,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 int level = operations[i]["intensity"].asInt();
                 saltAndPepperNoise(d_image, d_tempImage, level);
                 d_image->image = d_tempImage->image;
-//                printf("Salt and Pepper Noise\n");
-            } else if (type == "histogram-equalization") {
-//                printf("Histogram Equalization\n");
-                calculateHistogram(d_image, h_histogram, d_histogram);
 
+            } else if (type == "histogram-equalization") {
+                calculateHistogram(d_image, h_histogram, d_histogram);
                 equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
                 equalizeImageWithHist(d_image, d_tempImage, h_mappings);
                 d_image->image = d_tempImage->image;

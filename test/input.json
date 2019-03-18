@@ -16,14 +16,14 @@
         "width": 3,
         "height": 3,
         "values": [
-          -1,
-          0,
           1,
-          -1,
-          0,
           1,
-          -1,
-          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
           1
         ]
       }
@@ -34,27 +34,27 @@
         "width": 3,
         "height": 3,
         "values": [
-          -1,
-          0,
           1,
-          -1,
-          0,
           1,
-          -1,
-          0,
+          1,
+          1,
+          1,
+          1,
+          1,
+          1,
           1
         ]
       }
     },
-    {
-      "type": "gaussian-noise",
-      "std_dev": 1,
-      "mean": 1
-    },
+//    {
+//      "type": "gaussian-noise",
+//      "std_dev": 1,
+//      "mean": 1
+//    },
     {
       "type": "salt-and-pepper",
       "intensity": 10
-    }
+    },
     {
       "type": "quantization",
       "levels": [

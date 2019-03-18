@@ -10,6 +10,9 @@
 #include <curand_kernel.h>
 #include <math.h>
 
+//#define DEBUG true
+#define DEBUG false
+
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value);
@@ -51,7 +54,7 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
         case 0:
             // luminance method
             CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
-            convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
+            convertRGBToGra*yscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
@@ -177,8 +180,8 @@ __global__ void linearFilter(unsigned char *image, unsigned char *output, int wi
     if ((tid < totalPixels)) {
         int aboveBelow = (kHeight - 1) / 2;
         int sideToSide = (kWidth - 1) / 2;
-        if (row < aboveBelow || row > height - aboveBelow || column < sideToSide || column > width - sideToSide) {
-            output[row * width + column] = 255;//image[row * width + column]; // handles when our filter would go outside the edge of the image
+        if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
+            output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
         } else {
             int sum = 0;
             int k = 0;
@@ -217,29 +220,29 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
     if ((tid < totalPixels)) {
         int aboveBelow = (kHeight - 1) / 2;
         int sideToSide = (kWidth - 1) / 2;
-        if (row < aboveBelow || row > height - aboveBelow || column < sideToSide || column > width - sideToSide) {
-            output[row * width + column] = image[row * width + column]; // handles when our filter would go outside the edge of the image
+        if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
+            output[row * width + column] = 0;//image[row * width + column]; // handles when our filter would go outside the edge of the image
         } else {
             int k = 0;
             for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
                 for (int j = column - sideToSide; j <= column + sideToSide; j++) {
                     filteredVals[(row * column * kernLen) + k] = image[i * width + j] * kernel[k];
-//                    if (tid == totalPixels - width * 3 + 2) {
-//                        printf("%i ", image[i * width + j] * kernel[k]);
-//                        printf("%i\n", filteredVals[(row * column * kernLen) + k]);
-//                    }
+                    if (tid == totalPixels - width * 3 + 2 && DEBUG) {
+                        printf("%i ", image[i * width + j] * kernel[k]);
+                        printf("%i\n", filteredVals[(row * column * kernLen) + k]);
+                    }
                     k++;
                 }
             }
-//            if (tid == totalPixels - width * 3 + 2) {
-//                printf("\n");
-//            }
-//            if (tid == totalPixels - width * 3 + 2) {
-//                for (int q = 0; q < kernLen; q++) {
-//                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
-//                }
-//                printf("\n");
-//            }
+            if (tid == totalPixels - width * 3 + 2 && DEBUG) {
+                printf("\n");
+            }
+            if (tid == totalPixels - width * 3 + 2 && DEBUG) {
+                for (int q = 0; q < kernLen; q++) {
+                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
+                }
+                printf("\n");
+            }
             // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on at max a few hundred items is the least of my worries.
             // could be sped up with a quicksort or something but thats a lot harder...
             int base = (row * column * kernLen);
@@ -253,12 +256,12 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
                 }
                 filteredVals[base + j + 1] = key;
             }
-//            if (tid == totalPixels - width * 3 + 2) {
-//                for (int q = 0; q < kernLen; q++) {
-//                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
-//                }
-//                printf("\n");
-//            }
+            if (tid == totalPixels - width * 3 + 2 && DEBUG) {
+                for (int q = 0; q < kernLen; q++) {
+                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
+                }
+                printf("\n");
+            }
 
             output[row * width + column] = (unsigned char) filteredVals[base + kernLen / 2];
 //            if (tid == totalPixels - width * 3 + 2) {
