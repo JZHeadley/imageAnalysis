@@ -47,8 +47,6 @@ void linearFilter(Image *image, Image *output, int *kernel, int kWidth, int kHei
 
 void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight);
 
-void cleanUp(Image *image, RGBImage *rgbImage, Image *tempImage);
-
 void saltAndPepperNoise(Image *image, Image *output, int level);
 
 /**
@@ -63,5 +61,7 @@ void saltAndPepperNoise(Image *image, Image *output, int level);
 void extractSingleColorChannel(RGBImage *rgb, Image *out, int color);
 
 void setupRandomness(Image *image);
+
+void imageQuantization(Image *image, Image *output, int *levels, int numLevels);
 
 #endif

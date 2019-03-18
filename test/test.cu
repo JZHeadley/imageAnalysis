@@ -162,9 +162,9 @@ void testing() {
         }
     }
 
-    int *h_histogram;
+    int *h_histogram = nullptr;
     cudaMallocHost(&h_histogram, sizeof(int) * 256);
-    int *d_histogram;
+    int *d_histogram = nullptr;
     calculateHistogram(d_grayImage, h_histogram, d_histogram);
     if (DEBUG_HIST) {
         int sum = 0;
@@ -189,9 +189,9 @@ void testing() {
 
         }
 
-        int *h_histogram2;
+        int *h_histogram2 = nullptr;
         cudaMallocHost(&h_histogram2, sizeof(int) * 256);
-        int *d_histogram2;
+        int *d_histogram2 = nullptr;
         calculateHistogram(d_equalizedImage, h_histogram2, d_histogram2);
         drawHistogram(h_histogram2, 256);
 
@@ -274,8 +274,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     int k_height;
     int *kern;
     Mat mat;
-    int *h_histogram;
-    int *d_histogram;
+    int *h_histogram = nullptr;
+    int *d_histogram = nullptr;
     int h_mappings[256];
     cudaMallocHost(&h_histogram, sizeof(int) * 256);
     RGBImage *h_rgbImage = new RGBImage;
@@ -284,9 +284,10 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Image *d_tempImage = new Image;
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
+//    cudaStream_t *stream = new cudaStream_t;
 
     Image *h_equalizedImage = new Image;
-    bool randombessSet = false;
+    bool randomnessSet = false;
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
 
         curFilePath = files[k];
@@ -348,6 +349,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 ////                printf("Gaussian Noise\n");
             } else if (type == "salt-and-pepper") {
                 int level = operations[i]["intensity"].asInt();
+//                cudaStreamSynchronize(*stream);
                 saltAndPepperNoise(d_image, d_tempImage, level);
                 d_image->image = d_tempImage->image;
 
@@ -356,6 +358,20 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
                 equalizeImageWithHist(d_image, d_tempImage, h_mappings);
                 d_image->image = d_tempImage->image;
+            } else if (type == "quantization") {
+                const Json::Value &levelsJson = operations[i]["levels"];
+                int numLevels = levelsJson.size();
+                int *levels = (int *) malloc(sizeof(int) * 3 * numLevels);
+                for (int v = 0; v < numLevels; v++) {
+//                    k[i] = k_vals[i].asInt();
+                    Json::Value levelJson = levelsJson[v];
+                    levels[v * 3] = levelJson["min"].asInt();
+                    levels[v * 3 + 1] = levelJson["max"].asInt();
+                    levels[v * 3 + 2] = levelJson["val"].asInt();
+                }
+                imageQuantization(d_image, d_tempImage, levels, numLevels);
+                d_image->image = d_tempImage->image;
+                free(levels);
             } else {
                 printf("Unsupported Operation\n");
                 supported = false;
@@ -370,7 +386,6 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         if (saveFinalImages) {
             saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
         }
-        cleanUp(d_image, d_rgbImage, d_tempImage);
     }
 }
 

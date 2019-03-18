@@ -49,7 +49,6 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     int totalPixels = d_rgb->width * d_rgb->height;
     int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
-    cudaError_t err;
     switch (method) {
         case 0:
             // luminance method
@@ -308,7 +307,6 @@ __global__ void generateSaltAndPepper(unsigned char *image, unsigned char *outpu
     if (tid < totalPixels) {
         curandState localState = states[tid];
         int randVal = curand_uniform(&localState) * (level - 0 + .999999);
-//        printf("%f\n", randVal);
         if (randVal == level) {
             randVal = curand_uniform(&localState);
             if (randVal > .5) {
@@ -317,7 +315,6 @@ __global__ void generateSaltAndPepper(unsigned char *image, unsigned char *outpu
                 output[row * width + column] = 0;
             }
         } else {
-//            printf("Setting original value: %i \n", image[row * width + column]);
             output[row * width + column] = image[row * width + column];
         }
     }
@@ -348,12 +345,40 @@ void saltAndPepperNoise(Image *image, Image *output, int level) {
 //    CUDA_CHECK_RETURN(cudaFree(d_states));
 }
 
+__global__ void imageQuantizationKernel(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *levels, int numLevels) {
 
-void cleanUp(Image *image, RGBImage *rgbImage, Image *tempImage) {
-//    CUDA_CHECK_RETURN(cudaFree(image->image));
-//    CUDA_CHECK_RETURN(cudaFree(rgbImage->image));
-//    CUDA_CHECK_RETURN(cudaFree(tempImage->image));
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    bool leveled = false;
+    if (tid < totalPixels) {
+        for (int i = 0; i < numLevels; i++) {
+            if (image[row * width + column] <= levels[i * 3] && image[row * width + column] < levels[i * 3 + 1]) {
+                output[row * width + column] = (unsigned char) levels[i * 3 + 2];
+                leveled = true;
+            }
+        }
+        if (!leveled) {
+            output[row * width + column] = image[row * width + column];
+        }
+    }
+    return;
+}
 
+void imageQuantization(Image *image, Image *output, int *levels, int numLevels) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
+    int *d_levels;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_levels, sizeof(int) * numLevels * 3));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_levels, levels, sizeof(int) * 3 * numLevels, cudaMemcpyHostToDevice));
+
+    // kernel call here
+    imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid,0>> > (image->image, output->image, output->width, output->height, totalPixels, d_levels, numLevels);
+//    CUDA_CHECK_RETURN(cudaFree(d_levels));
 }
 
 void copyHostImageToDevice(Image *host, Image *device) {
