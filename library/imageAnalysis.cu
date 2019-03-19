@@ -169,6 +169,30 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
 
 }
 
+__global__ void averageFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if ((tid < totalPixels)) {
+        int aboveBelow = (kHeight - 1) / 2;
+        int sideToSide = (kWidth - 1) / 2;
+        if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
+            output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
+        } else {
+            int sum = 0;
+            int k = 0;
+            for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
+                for (int j = column - sideToSide; j <= column + sideToSide; j++) {
+                    sum += image[i * width + j] * kernel[k];
+                    k++;
+                }
+            }
+            output[row * width + column] = (unsigned char) (sum / (kWidth * kHeight));
+        }
+    }
+    return;
+}
+
 //TODO: convert this to not an average filter and do normalization on the result of this instead of averaging.
 __global__ void linearFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -188,7 +212,7 @@ __global__ void linearFilter(unsigned char *image, unsigned char *output, int wi
                     k++;
                 }
             }
-            output[row * width + column] = (unsigned char) (sum / (kWidth * kHeight));
+            output[row * width + column] = (unsigned char) (sum);
         }
     }
     return;
