@@ -197,7 +197,7 @@ void testing() {
 
     }
     Image *d_linFilImage = new Image;
-    int kern[9] = {-1, 0, 1, -1, 0, 1, -1, 0, 1};
+    float kern[9] = {-1, 0, 1, -1, 0, 1, -1, 0, 1};
     linearFilter(d_equalizedImage, d_linFilImage, kern, 3, 3);
     if (DEBUG_LINFILTER) {
         Image *h_linFilImage = new Image;
@@ -210,7 +210,7 @@ void testing() {
         }
     }
     Image *d_medFilImage = new Image;
-    int medKern[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    float medKern[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
     medianFilter(d_equalizedImage, d_medFilImage, medKern, 3, 3);
     if (DEBUG_MEDFILTER) {
         Image *h_medFilImage = new Image;
@@ -225,11 +225,11 @@ void testing() {
 
 }
 
-void readInKernel(Json::Value kernel, int *k, int numValues) {
+void readInKernel(Json::Value kernel, float *k, int numValues) {
     const Json::Value &k_vals = kernel["values"];
     assert(numValues == k_vals.size());
     for (int i = 0; i < numValues; i++) {
-        k[i] = k_vals[i].asInt();
+        k[i] = k_vals[i].asFloat();
     }
 }
 
@@ -272,7 +272,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     string curFilePath;
     int k_width;
     int k_height;
-    int *kern;
+    float *kern;
     Mat mat;
     int *h_histogram = nullptr;
     int *d_histogram = nullptr;
@@ -329,7 +329,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 Json::Value kernel = operations[i]["kernel"];
                 k_width = kernel["width"].asInt();
                 k_height = kernel["height"].asInt();
-                kern = (int *) malloc(sizeof(int) * k_width * k_height);
+                kern = (float *) malloc(sizeof(float) * k_width * k_height);
                 readInKernel(kernel, kern, k_width * k_height);
                 linearFilter(d_image, d_tempImage, kern, k_width, k_height);
                 d_image->image = d_tempImage->image;
@@ -339,7 +339,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 Json::Value kernel = operations[i]["kernel"];
                 k_width = kernel["width"].asInt();
                 k_height = kernel["height"].asInt();
-                kern = (int *) malloc(sizeof(int) * k_width * k_height);
+                kern = (float *) malloc(sizeof(float) * k_width * k_height);
                 readInKernel(kernel, kern, k_width * k_height);
                 medianFilter(d_image, d_tempImage, kern, k_width, k_height);
                 d_image->image = d_tempImage->image;

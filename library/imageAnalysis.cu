@@ -10,13 +10,11 @@
 #include <curand_kernel.h>
 #include <math.h>
 
-//#define DEBUG true
-#define DEBUG false
-
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 
 #define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value);
 
+curandState *d_states;
 
 __global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, int height, int numPixels, int channels, unsigned char *output) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -172,7 +170,7 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
 }
 
 //TODO: convert this to not an average filter and do normalization on the result of this instead of averaging.
-__global__ void linearFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *kernel, int kWidth, int kHeight) {
+__global__ void linearFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
     int column = tid - ((tid / width) * width);
@@ -196,22 +194,22 @@ __global__ void linearFilter(unsigned char *image, unsigned char *output, int wi
     return;
 }
 
-void linearFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight) {
+void linearFilter(Image *image, Image *output, float *kernel, int kWidth, int kHeight) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     output->width = image->width;
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
-    int *d_kernel;
-    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(int) * kWidth * kHeight));
-    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(int) * kWidth * kHeight, cudaMemcpyHostToDevice));
+    float *d_kernel;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(float) * kWidth * kHeight));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice));
     linearFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight);
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
 
 }
 
-__global__ void medianFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *kernel, int kWidth, int kHeight, int *filteredVals) {
+__global__ void medianFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight, float *filteredVals) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
     int column = tid - ((tid / width) * width);
@@ -226,21 +224,8 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
             for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
                 for (int j = column - sideToSide; j <= column + sideToSide; j++) {
                     filteredVals[(row * column * kernLen) + k] = image[i * width + j] * kernel[k];
-                    if (tid == totalPixels - width * 3 + 2 && DEBUG) {
-                        printf("%i ", image[i * width + j] * kernel[k]);
-                        printf("%i\n", filteredVals[(row * column * kernLen) + k]);
-                    }
                     k++;
                 }
-            }
-            if (tid == totalPixels - width * 3 + 2 && DEBUG) {
-                printf("\n");
-            }
-            if (tid == totalPixels - width * 3 + 2 && DEBUG) {
-                for (int q = 0; q < kernLen; q++) {
-                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
-                }
-                printf("\n");
             }
             // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on at max a few hundred items is the least of my worries.
             // could be sped up with a quicksort or something but thats a lot harder...
@@ -255,34 +240,24 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
                 }
                 filteredVals[base + j + 1] = key;
             }
-            if (tid == totalPixels - width * 3 + 2 && DEBUG) {
-                for (int q = 0; q < kernLen; q++) {
-                    printf("%i ", filteredVals[(row * column * kernLen) + q]);
-                }
-                printf("\n");
-            }
-
             output[row * width + column] = (unsigned char) filteredVals[base + kernLen / 2];
-//            if (tid == totalPixels - width * 3 + 2) {
-//                printf("median is %i\n", output[row * width + column]);
-//            }
         }
     }
     return;
 }
 
-void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight) {
+void medianFilter(Image *image, Image *output, float *kernel, int kWidth, int kHeight) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     output->width = image->width;
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
-    int *d_kernel;
-    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(int) * kWidth * kHeight));
-    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(int) * kWidth * kHeight, cudaMemcpyHostToDevice));
-    int *d_filteredVals;
-    CUDA_CHECK_RETURN(cudaMalloc(&d_filteredVals, sizeof(int) * kWidth * kHeight * totalPixels));
+    float *d_kernel;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(float) * kWidth * kHeight));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice));
+    float *d_filteredVals;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_filteredVals, sizeof(float) * kWidth * kHeight * totalPixels));
     medianFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight, d_filteredVals);
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
     CUDA_CHECK_RETURN(cudaFree(d_filteredVals));
@@ -321,7 +296,6 @@ __global__ void generateSaltAndPepper(unsigned char *image, unsigned char *outpu
     return;
 }
 
-curandState *d_states;
 
 void setupRandomness(Image *image) {
     int totalPixels = image->width * image->height;
@@ -339,10 +313,7 @@ void saltAndPepperNoise(Image *image, Image *output, int level) {
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
 
-
     generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_states, level);
-
-//    CUDA_CHECK_RETURN(cudaFree(d_states));
 }
 
 __global__ void imageQuantizationKernel(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *levels, int numLevels) {
@@ -377,7 +348,7 @@ void imageQuantization(Image *image, Image *output, int *levels, int numLevels) 
     CUDA_CHECK_RETURN(cudaMemcpy(d_levels, levels, sizeof(int) * 3 * numLevels, cudaMemcpyHostToDevice));
 
     // kernel call here
-    imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid,0>> > (image->image, output->image, output->width, output->height, totalPixels, d_levels, numLevels);
+    imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, output->width, output->height, totalPixels, d_levels, numLevels);
 //    CUDA_CHECK_RETURN(cudaFree(d_levels));
 }
 
