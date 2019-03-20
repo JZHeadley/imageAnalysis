@@ -49,6 +49,8 @@ void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHei
 
 void saltAndPepperNoise(Image *image, Image *output, int level);
 
+void addGaussianNoise(Image *image, Image *output, float mean, float stdDev);
+
 /**
  *
  * @param rgb the image to extract a color from

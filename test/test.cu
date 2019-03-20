@@ -135,95 +135,6 @@ void drawHistogram(int *arr, int len) {
 }
 // end not my work
 
-void testing() {
-    Mat mat = imread("/home/jzheadley/Pictures/Lenna.png", CV_LOAD_IMAGE_COLOR);
-    RGBImage *h_rgbImage = new RGBImage;
-    convertMatToRGBImage(mat, h_rgbImage);
-    if (DEBUG_GRAYSCALE) {
-        imshow("Lenna", mat);
-        printf("image pointer: %x width: %i height: %i channels: %i \n", h_rgbImage->image, h_rgbImage->width, h_rgbImage->height, h_rgbImage->channels);
-    }
-    RGBImage *d_rgbImage = new RGBImage;
-    copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
-    printf("image pointer: %x width: %i height: %i channels: %i \n", d_rgbImage->image, d_rgbImage->width, d_rgbImage->height, d_rgbImage->channels);
-
-    Image *d_grayImage = new Image;
-    convertRGBToGrayscale(d_rgbImage, d_grayImage, 0);
-
-    if (DEBUG_GRAYSCALE) {
-        Image *h_grayImage = new Image;
-        copyDeviceImageToHost(d_grayImage, h_grayImage);
-
-        Mat *grayscale = new Mat;
-        convertImageToMat(h_grayImage, grayscale);
-        imshow("grayscaled with cuda", *grayscale);
-//     Loop until escape is pressed
-        while (cvWaitKey(1) != '\33') {
-
-        }
-    }
-
-    int *h_histogram = nullptr;
-    cudaMallocHost(&h_histogram, sizeof(int) * 256);
-    int *d_histogram = nullptr;
-    calculateHistogram(d_grayImage, h_histogram, d_histogram);
-    if (DEBUG_HIST) {
-        int sum = 0;
-        for (int i = 0; i < 256; i++) {
-//            printf("%i\n", h_histogram[i]);
-            sum += h_histogram[i];
-        }
-        printf("total pixels: %i num in histogram: %i\n", d_grayImage->width * d_grayImage->height, sum);
-        drawHistogram(h_histogram, 256);
-    }
-    int h_mappings[256];
-    equalizeHistogram(h_histogram, h_mappings, d_grayImage->height * d_grayImage->width);
-    Image *d_equalizedImage = new Image;
-    equalizeImageWithHist(d_grayImage, d_equalizedImage, h_mappings);
-    if (DEBUG_EQUALIZED) {
-        Image *h_equalizedImage = new Image;
-        copyDeviceImageToHost(d_equalizedImage, h_equalizedImage);
-        Mat *equalizedMat = new Mat;
-        convertImageToMat(h_equalizedImage, equalizedMat);
-        imshow("equalized", *equalizedMat);
-        while (cvWaitKey(1) != '\33') {
-
-        }
-
-        int *h_histogram2 = nullptr;
-        cudaMallocHost(&h_histogram2, sizeof(int) * 256);
-        int *d_histogram2 = nullptr;
-        calculateHistogram(d_equalizedImage, h_histogram2, d_histogram2);
-        drawHistogram(h_histogram2, 256);
-
-    }
-    Image *d_linFilImage = new Image;
-    float kern[9] = {-1, 0, 1, -1, 0, 1, -1, 0, 1};
-    linearFilter(d_equalizedImage, d_linFilImage, kern, 3, 3);
-    if (DEBUG_LINFILTER) {
-        Image *h_linFilImage = new Image;
-        copyDeviceImageToHost(d_linFilImage, h_linFilImage);
-        Mat *linFilMat = new Mat;
-        convertImageToMat(h_linFilImage, linFilMat);
-        imshow("Linear Filter", *linFilMat);
-        while (cvWaitKey(1) != '\33') {
-
-        }
-    }
-    Image *d_medFilImage = new Image;
-    int medKern[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
-    medianFilter(d_equalizedImage, d_medFilImage, medKern, 3, 3);
-    if (DEBUG_MEDFILTER) {
-        Image *h_medFilImage = new Image;
-        copyDeviceImageToHost(d_medFilImage, h_medFilImage);
-        Mat *medFilMat = new Mat;
-        convertImageToMat(h_medFilImage, medFilMat);
-        imshow("Median Filter", *medFilMat);
-        while (cvWaitKey(1) != '\33') {
-
-        }
-    }
-}
 
 void readInKernel(Json::Value kernel, float *k, int numValues) {
     const Json::Value &k_vals = kernel["values"];
@@ -355,8 +266,11 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 d_image->image = d_tempImage->image;
 
                 free(medKern);
-//            } else if (type == "gaussian-noise") {
-////                printf("Gaussian Noise\n");
+            } else if (type == "gaussian-noise") {
+//                printf("Gaussian Noise\n");
+                addGaussianNoise(d_image, d_tempImage, -1, -1);
+                d_image->image = d_tempImage->image;
+
             } else if (type == "salt-and-pepper") {
                 int level = operations[i]["intensity"].asInt();
 //                cudaStreamSynchronize(*stream);
@@ -417,7 +331,6 @@ int main(int argc, char *argv[]) {
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
-//    testing();
     executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel, fileFilter);
 
 

@@ -3,12 +3,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <iostream>
+#include <math.h>
 
 #include <omp.h>
 
 #include <curand.h>
 #include <curand_kernel.h>
-#include <math.h>
+#include <thrust/device_ptr.h>
+#include <thrust/device_vector.h>
+#include <thrust/transform_reduce.h>
 
 static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
 
@@ -386,6 +389,74 @@ void imageQuantization(Image *image, Image *output, int *levels, int numLevels) 
     imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, output->width, output->height, totalPixels, d_levels, numLevels);
 //    CUDA_CHECK_RETURN(cudaFree(d_levels));
 }
+
+__device__ int result = 0;
+
+__global__ void sumReduction(unsigned char *array, int numElements) {
+    __shared__ int sharedMemory[512];
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    sharedMemory[threadIdx.x] = (tid < numElements) ? array[tid] : 0;
+    __syncthreads();
+    // do reduction in shared memory
+    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (threadIdx.x < s)
+            sharedMemory[threadIdx.x] += sharedMemory[threadIdx.x + s];
+        __syncthreads();
+    }
+    // write result for this block to global memory
+    if (threadIdx.x == 0) {
+        atomicAdd(&result, sharedMemory[0]);
+        printf("result %i\n", result);
+    }
+    return;
+}
+
+// this method of calculating mean and variance with thrust came from here https://stackoverflow.com/a/41862431
+// I tried to write a summation reduction myself (see the function above) and something just wouldn't work so I just decided to use this
+struct varianceshifteop : std::unary_function<float, float> {
+    varianceshifteop(float m) : mean(m) { /* no-op */ }
+
+    const float mean;
+
+    __device__ float operator()(float data) const {
+        return ::pow(data - mean, 2.0f);
+    }
+};
+
+void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev) {
+    int totalPixels = image->width * image->height;
+//    printf("%i %i %i %i %i\n", image->width, image->height, totalPixels, threadsPerBlock, blocksPerGrid);
+    thrust::device_ptr<unsigned char> dp = thrust::device_pointer_cast(image->image);
+    thrust::device_vector<unsigned char> thrust_image_d(dp, dp + totalPixels);
+    int sum = thrust::reduce(
+            thrust_image_d.cbegin(),
+            thrust_image_d.cend(),
+            0.0f,
+            thrust::plus<float>());
+    float meanCalc = sum / (float) totalPixels;
+
+    float variance = thrust::transform_reduce(
+            thrust_image_d.cbegin(),
+            thrust_image_d.cend(),
+            varianceshifteop(meanCalc),
+            0.0f,
+            thrust::plus<float>()) / (thrust_image_d.size() - 1);
+    float stdv = sqrt(variance);
+//    printf("%i is the sum of the pixels and %f is the mean variance is %f and stdDev is %f  \n", sum, meanCalc, variance, stdv);
+    *mean = meanCalc;
+    *stdDev = stdv;
+}
+
+void addGaussianNoise(Image *image, Image *output, float meanPar, float stdDevPar) {
+    float mean = meanPar;
+    float stdDev = stdDevPar;
+    if (mean == -1 || stdDev == -1) {
+        calculateMeanAndStdDev(image, &mean, &stdDev);
+    }
+    printf("%f %f\n", mean, stdDev);
+    output->image = image->image;
+}
+
 
 void copyHostImageToDevice(Image *host, Image *device) {
     // copy actual image data back to host from device
