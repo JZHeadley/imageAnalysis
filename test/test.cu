@@ -210,7 +210,7 @@ void testing() {
         }
     }
     Image *d_medFilImage = new Image;
-    float medKern[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    int medKern[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
     medianFilter(d_equalizedImage, d_medFilImage, medKern, 3, 3);
     if (DEBUG_MEDFILTER) {
         Image *h_medFilImage = new Image;
@@ -230,6 +230,14 @@ void readInKernel(Json::Value kernel, float *k, int numValues) {
     assert(numValues == k_vals.size());
     for (int i = 0; i < numValues; i++) {
         k[i] = k_vals[i].asFloat();
+    }
+}
+
+void readInKernel(Json::Value kernel, int *k, int numValues) {
+    const Json::Value &k_vals = kernel["values"];
+    assert(numValues == k_vals.size());
+    for (int i = 0; i < numValues; i++) {
+        k[i] = k_vals[i].asInt();
     }
 }
 
@@ -273,6 +281,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     int k_width;
     int k_height;
     float *kern;
+    int *medKern;
     Mat mat;
     int *h_histogram = nullptr;
     int *d_histogram = nullptr;
@@ -339,12 +348,12 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 Json::Value kernel = operations[i]["kernel"];
                 k_width = kernel["width"].asInt();
                 k_height = kernel["height"].asInt();
-                kern = (float *) malloc(sizeof(float) * k_width * k_height);
-                readInKernel(kernel, kern, k_width * k_height);
-                medianFilter(d_image, d_tempImage, kern, k_width, k_height);
+                medKern = (int *) malloc(sizeof(int) * k_width * k_height);
+                readInKernel(kernel, medKern, k_width * k_height);
+                medianFilter(d_image, d_tempImage, medKern, k_width, k_height);
                 d_image->image = d_tempImage->image;
 
-                free(kern);
+                free(medKern);
 //            } else if (type == "gaussian-noise") {
 ////                printf("Gaussian Noise\n");
             } else if (type == "salt-and-pepper") {

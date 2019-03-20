@@ -233,7 +233,7 @@ void linearFilter(Image *image, Image *output, float *kernel, int kWidth, int kH
 
 }
 
-__global__ void medianFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight, float *filteredVals) {
+__global__ void medianFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *kernel, int kWidth, int kHeight, int *filteredVals, int kernSum) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
     int column = tid - ((tid / width) * width);
@@ -270,19 +270,28 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
     return;
 }
 
-void medianFilter(Image *image, Image *output, float *kernel, int kWidth, int kHeight) {
+int arraySum(int *array, int arrayLen) {
+    int sum = 0;
+    for (int i = 0; i < arrayLen; i++) {
+        sum += array[i];
+    }
+    return sum;
+}
+
+void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     output->width = image->width;
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
-    float *d_kernel;
-    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(float) * kWidth * kHeight));
-    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice));
-    float *d_filteredVals;
-    CUDA_CHECK_RETURN(cudaMalloc(&d_filteredVals, sizeof(float) * kWidth * kHeight * totalPixels));
-    medianFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight, d_filteredVals);
+    int *d_kernel;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(int) * kWidth * kHeight));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(int) * kWidth * kHeight, cudaMemcpyHostToDevice));
+    int *d_filteredVals;
+    int kernSum = arraySum(kernel, kWidth * kHeight);
+    CUDA_CHECK_RETURN(cudaMalloc(&d_filteredVals, sizeof(int) * kernSum * totalPixels));
+    medianFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight, d_filteredVals, kernSum);
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
     CUDA_CHECK_RETURN(cudaFree(d_filteredVals));
 }
