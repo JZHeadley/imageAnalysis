@@ -45,6 +45,10 @@
       }
     },
     {
+      "type": "salt-and-pepper",
+      "intensity": 5
+    },
+    {
       "type": "median-filter",
       "kernel": {
         "width": 3,
@@ -52,19 +56,15 @@
         "values": [
           1,
           1,
-          2,
+          1,
+          1,
+          ,
           1,
           1,
           1,
-          1,
-          4,
           1
         ]
       }
-    },
-    {
-      "type": "salt-and-pepper",
-      "intensity": 1
     },
     {
       "type": "gaussian-noise",

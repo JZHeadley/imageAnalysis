@@ -247,15 +247,19 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
             int k = 0;
             for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
                 for (int j = column - sideToSide; j <= column + sideToSide; j++) {
-                    filteredVals[(row * column * kernLen) + k] = image[i * width + j] * kernel[k];
+                    // in theory this should handle weighted kernels... assuming I got all my indexing correct which I think I did...
+                    for (int z = 0; z < kernel[k]; z++) {
+                        filteredVals[(row * column * kernLen) + k + z] = image[i * width + j];
+                    }
                     k++;
                 }
             }
+
             // to find the median of the filteredValues I'm just going to sort it with an O(n^2) sort because at this level of parellelism O(n^2) on at max a few hundred items is the least of my worries.
             // could be sped up with a quicksort or something but thats a lot harder...
-            int base = (row * column * kernLen);
+            int base = (row * column * kernSum);
             int j, key;
-            for (int i = 0; i < kernLen; i++) {
+            for (int i = 0; i < kernSum; i++) {
                 j = i - 1;
                 key = filteredVals[base + i];
                 while (j >= 0 && filteredVals[base + j] > key) {
@@ -264,7 +268,7 @@ __global__ void medianFilter(unsigned char *image, unsigned char *output, int wi
                 }
                 filteredVals[base + j + 1] = key;
             }
-            output[row * width + column] = (unsigned char) filteredVals[base + kernLen / 2];
+            output[row * width + column] = (unsigned char) filteredVals[base + kernSum / 2];
         }
     }
     return;
@@ -298,9 +302,7 @@ void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHei
 
 
 __global__ void setup_kernel(curandState *state) {
-//    int id = threadIdx.x + blockIdx.x * 64;
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
-
     /* Each thread gets same seed, a different sequence
        number, no offset */
     curand_init(1234, tid, 0, &state[tid]);
