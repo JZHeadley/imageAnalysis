@@ -318,8 +318,8 @@ __global__ void generateSaltAndPepper(unsigned char *image, unsigned char *outpu
         curandState localState = states[tid];
         int randVal = curand_uniform(&localState) * (level - 0 + .999999);
         if (randVal == level) {
-            randVal = curand_uniform(&localState);
-            if (randVal > .5) {
+            float sop = curand_uniform(&localState);
+            if (sop > .5) {
                 output[row * width + column] = 255;
             } else {
                 output[row * width + column] = 0;

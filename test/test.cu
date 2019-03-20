@@ -11,6 +11,7 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <regex>
 
 #include <dirent.h>
 #include <opencv2/opencv.hpp>
@@ -222,7 +223,6 @@ void testing() {
 
         }
     }
-
 }
 
 void readInKernel(Json::Value kernel, float *k, int numValues) {
@@ -241,7 +241,7 @@ void readInKernel(Json::Value kernel, int *k, int numValues) {
     }
 }
 
-vector <string> getFileNames(string input_image_folder) {
+vector <string> getFileNames(string input_image_folder, regex filter) {
     // adapted from this https://stackoverflow.com/a/612176
     vector <string> files;
     DIR *dir;
@@ -250,7 +250,8 @@ vector <string> getFileNames(string input_image_folder) {
         /* print all the files and directories within directory */
         while ((ent = readdir(dir)) != NULL) {
             if (strncmp(ent->d_name, ".", 1)) {
-                files.push_back(ent->d_name);
+                if (regex_search(ent->d_name, filter))
+                    files.push_back(ent->d_name);
 //                printf("%s\n", ent->d_name);
             }
         }
@@ -273,8 +274,8 @@ void saveImage(string output_image_folder, Image *d_image, Image *h_image, Mat *
     imwrite(outPath, *outputMat);//, compression_params);
 }
 
-void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages, string extract_channel) {
-    vector <string> files = getFileNames(input_image_folder);
+void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages, string extract_channel, regex fileFilter) {
+    vector <string> files = getFileNames(input_image_folder, fileFilter);
     const Json::Value &operations = json["operations"];
     int numOperations = operations.size();
     string curFilePath;
@@ -408,7 +409,7 @@ int main(int argc, char *argv[]) {
     string input_image_folder = json["image_folder"].asString();
     string output_image_folder = json["output_dir"].asString();
     string extract_channel = json["extract_channel"].asString();
-
+    regex fileFilter = regex(json["input_image_filter"].asString());
     bool saveFinalImages = json["saveFinalImages"].asBool();
     bool saveIntermediateImages = json["saveIntermediateImages"].asBool();
     printf("Input: %s\nOutput: %s\nSaving intermediates: %s\nSaving Finals: %s\n",
@@ -417,7 +418,7 @@ int main(int argc, char *argv[]) {
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
 //    testing();
-    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel);
+    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel, fileFilter);
 
 
     return 0;

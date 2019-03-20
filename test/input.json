@@ -1,6 +1,6 @@
 {
   "image_folder": "/home/jzheadley/projects/classes/cmsc630/project1/Cancerous cell smears",
-  "input_image_filter": "",
+  "input_image_filter": "cyl",
   "saveIntermediateImages": true,
   "saveFinalImages": true,
   "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
@@ -46,7 +46,7 @@
     },
     {
       "type": "salt-and-pepper",
-      "intensity": 5
+      "intensity": 2
     },
     {
       "type": "median-filter",
@@ -58,7 +58,7 @@
           1,
           1,
           1,
-          ,
+          1,
           1,
           1,
           1,
@@ -70,7 +70,7 @@
       "type": "gaussian-noise",
       // set to -1 to calculate it from the image
       "std_dev": 1,
-      // set to -1 to calculate it from the image
+      //      // set to -1 to calculate it from the image
       "mean": 1
     }
   ]
