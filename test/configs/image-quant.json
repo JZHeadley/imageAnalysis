@@ -1,0 +1,29 @@
+{
+  "image_folder": "/home/jzheadley/projects/classes/cmsc630/project1/Cancerous cell smears",
+  // regex pattern of types to match.  For example 'cyl|inter' will process all files starting with cyl or inter
+  "input_image_filter": "",
+  "saveIntermediateImages": true,
+  "saveFinalImages": true,
+  "calc_MSQE": true,
+  "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
+  // red, blue, green, or grey
+  "extract_channel": "grey",
+  "operations": [
+    {
+      "type": "quantization",
+      "levels": [
+        {
+          // includes the lower bound in the range but not the upper bound
+          "min": 10,
+          "max": 20,
+          "val": 15
+        },
+        {
+          "min": 30,
+          "max": 250,
+          "val": 77
+        }
+      ]
+    }
+  ]
+}

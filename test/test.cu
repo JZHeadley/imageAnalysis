@@ -19,7 +19,7 @@
 
 using namespace std;
 using namespace cv;
-#define LOGLEVEL 3
+#define LOGLEVEL 5
 //#define DEBUG_GRAYSCALE true
 #define DEBUG_GRAYSCALE false
 //#define DEBUG_HIST true
@@ -69,72 +69,7 @@ void convertRGBImageToMat(RGBImage *image, Mat *output) {
 void convertImageToMat(Image *image, Mat *mat) {
     Mat output(image->height, image->width, CV_8UC1, image->image);
     *mat = output;
-
 }
-
-/*
- * The following few functions are related to drawing a histogram and I didn't write them myself.
- * I mentioned it to a friend and he wrote them for the fun of it.  They shouldn't make it into whatever I turn in and are not required functions so I figure its fine for testing things out.
- */
-int findMax(int *arr, int len) {
-    int m = -1;
-    for (int i = 0; i < len; i++) {
-        if (arr[i] > m) {
-            m = arr[i];
-        }
-    }
-    return m;
-}
-
-int getTerminalWidth() {
-    struct winsize w;
-    ioctl(0, TIOCGWINSZ, &w);
-    return w.ws_col;
-}
-
-void padWithZeroes(char *str, int num, int numDigits) {
-    int i = 0;
-    if (num == 0) {
-        for (int i = 0; i < numDigits; i++) {
-            str[i] = '0';
-        }
-    } else {
-        while (num * pow(10, i) < pow(10, numDigits - 1)) {
-            str[i] = '0';
-            i++;
-        }
-        sprintf(str + i, "%d", num);
-    }
-}
-
-void drawHistogram(int *arr, int len) {
-    int max = findMax(arr, len);
-    int numDigits = 0;
-    int width = getTerminalWidth() - 5;
-    int dw = max / width;
-    while (pow(10, numDigits) < len) {
-        numDigits++;
-    }
-    width = getTerminalWidth() - (numDigits + 2);
-    dw = max / width;
-    printf("%d, %d, %d\n", max, width, dw);
-    for (int i = 0; i < len; i++) {
-        char string[numDigits + 2];
-        padWithZeroes(string, i, numDigits);
-        printf("\n");
-        printf("%s|", string);
-        for (int j = 0; j < width - numDigits + 2; j++) {
-            if (arr[i] > dw * j) {
-                printf("#");
-            } else {
-                break;
-            }
-        }
-    }
-    printf("\n");
-}
-// end not my work
-
 
 void readInKernel(Json::Value kernel, float *k, int numValues) {
     const Json::Value &k_vals = kernel["values"];
@@ -170,6 +105,8 @@ vector <string> getFileNames(string input_image_folder, regex filter) {
     } else {
         perror("");
     }
+
+    std::sort(files.begin(), files.end());
     return files;
 
 }
@@ -208,6 +145,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Image *d_tempImage = new Image;
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
+//    types of cells: cyl inter let mod para super svar
+
+
 //    cudaStream_t *stream = new cudaStream_t;
     cudaEvent_t operationStart, operationStop, batchStart, batchStop;
     cudaEventCreate(&operationStart);
@@ -232,16 +172,12 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     cudaEventRecord(batchStart);
 
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
-
         curFilePath = files[k];
         if (LOGLEVEL >= 4)
             printf("Working on image %s\n", curFilePath.c_str());
         try {
             mat = imread(input_image_folder + "/" + curFilePath, CV_LOAD_IMAGE_COLOR);
-
-
             convertMatToRGBImage(mat, h_rgbImage);
-
             // convert image to a single color spectrum
             if (extract_channel == "grey") {
                 cudaEventRecord(operationStart);
@@ -427,24 +363,24 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             continue;
         }
     }
-    printf("Total time spent on the entire batch: %f ms average of %f ms for each image\n", totalBatchTime, totalBatchTime / numImages);
+    printf("\n\nTotal time spent on the entire batch: %0.4f ms average of %0.4f ms for each image\n", totalBatchTime, totalBatchTime / numImages);
     if (extract_channel == "grey") {
-        printf("Total time spent converting to grayscale: %f ms average of: %f ms per image\n", totalGrayscaleTime, totalGrayscaleTime / numImages);
+        printf("Total time spent converting to grayscale: %0.4f ms average of: %0.4f ms per image\n", totalGrayscaleTime, totalGrayscaleTime / numImages);
     } else {
-        printf("Total time spent converting to a single channel: %f ms average of: %f ms per image\n", totalSingleChannelConvertTime, totalSingleChannelConvertTime / numImages);
+        printf("Total time spent converting to a single channel: %0.4f ms average of: %0.4f ms per image\n", totalSingleChannelConvertTime, totalSingleChannelConvertTime / numImages);
     }
-    printf("Total time spent performing histogram equalization: %f ms average of: %f ms per image\n", totalHistEqualizationTime, totalHistEqualizationTime / numImages);
-    printf("Total time spent adding gaussian noise: %f ms average of: %f ms per image\n", totalGaussianNoiseTime, totalGaussianNoiseTime / numImages);
-    printf("Total time spent adding salt and pepper noise: %f ms average of: %f ms per image\n", totalSaltAndPepperNoiseTime, totalSaltAndPepperNoiseTime / numImages);
+    printf("Total time spent performing histogram equalization: %0.4f ms average of: %0.4f ms per image\n", totalHistEqualizationTime, totalHistEqualizationTime / numImages);
+    printf("Total time spent adding gaussian noise: %0.4f ms average of: %0.4f ms per image\n", totalGaussianNoiseTime, totalGaussianNoiseTime / numImages);
+    printf("Total time spent adding salt and pepper noise: %0.4f ms average of: %0.4f ms per image\n", totalSaltAndPepperNoiseTime, totalSaltAndPepperNoiseTime / numImages);
     if (calcMSQEConfig) {
-        printf("Total time spent performing image quantization: %f ms average of: %f ms per image with an average MSQE of %f\n", totalQuantizationTime, totalQuantizationTime / numImages,
+        printf("Total time spent performing image quantization: %0.4f ms average of: %0.4f ms per image with an average MSQE of %0.4f\n", totalQuantizationTime, totalQuantizationTime / numImages,
                totalMSQE / numImages);
     } else {
-        printf("Total time spent performing image quantization: %f ms average of: %f ms per image\n", totalQuantizationTime, totalQuantizationTime / numImages);
+        printf("Total time spent performing image quantization: %0.4f ms average of: %0.4f ms per image\n", totalQuantizationTime, totalQuantizationTime / numImages);
     }
-    printf("Total time spent linear filtering image: %f ms average of: %f ms per image\n", totalLinearFilterTime, totalLinearFilterTime / numImages);
-    printf("Total time spent average filtering image: %f ms average of: %f ms per image\n", totalAverageFilterTime, totalAverageFilterTime / numImages);
-    printf("Total time spent median filtering image: %f ms average of: %f ms per image\n", totalMedianFilterTime, totalMedianFilterTime / numImages);
+    printf("Total time spent linear filtering image: %0.4f ms average of: %0.4f ms per image\n", totalLinearFilterTime, totalLinearFilterTime / numImages);
+    printf("Total time spent average filtering image: %0.4f ms average of: %0.4f ms per image\n", totalAverageFilterTime, totalAverageFilterTime / numImages);
+    printf("Total time spent median filtering image: %0.4f ms average of: %0.4f ms per image\n", totalMedianFilterTime, totalMedianFilterTime / numImages);
 
 }
 
@@ -453,7 +389,11 @@ int main(int argc, char *argv[]) {
     compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
     compression_params.push_back(9);
     Json::Value json;
-    std::ifstream config("/home/jzheadley/CLionProjects/imageAnalysis/test/input.json", std::ifstream::binary);
+    if (argc < 2) {
+        printf("please pass a config file path as the argument\n");
+        exit(-1);
+    }
+    std::ifstream config(argv[1], std::ifstream::binary);
     config>>json;
     string input_image_folder = json["image_folder"].asString();
     string output_image_folder = json["output_dir"].asString();

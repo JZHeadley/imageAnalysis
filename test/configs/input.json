@@ -4,7 +4,7 @@
   "input_image_filter": "",
   "saveIntermediateImages": true,
   "saveFinalImages": true,
-  "calc_MSQE": false,
+  "calc_MSQE": true,
   "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
   // red, blue, green, or grey
   "extract_channel": "grey",
