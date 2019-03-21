@@ -370,14 +370,19 @@ __global__ void imageQuantizationKernel(unsigned char *image, unsigned char *out
     bool leveled = false;
     if (tid < totalPixels) {
         for (int i = 0; i < numLevels; i++) {
-            if (image[row * width + column] <= levels[i * 3] && image[row * width + column] < levels[i * 3 + 1]) {
-                output[row * width + column] = (unsigned char) levels[i * 3 + 2];
+            if (image[tid] >= levels[i * 3] && image[tid] < levels[i * 3 + 1]) {
+//                printf("value %i is between %i and %i and was set to %i\n", image[tid], levels[i * 3], levels[i * 3 + 1], levels[i * 3 + 2]);
+                output[tid] = (unsigned char) levels[i * 3 + 2];
                 leveled = true;
+                break;
+            } else {
+                output[tid] = image[tid];
             }
         }
-        if (!leveled) {
-            output[row * width + column] = image[row * width + column];
-        }
+//        if (!leveled) {
+//            printf("not leveled\n");
+//            output[row * width + column] = image[row * width + column];
+//        }
     }
     return;
 }
@@ -385,7 +390,7 @@ __global__ void imageQuantizationKernel(unsigned char *image, unsigned char *out
 __global__ void arrayDifference(unsigned char *image, unsigned char *output, unsigned char *difference, int *histogram, int totalPixels) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     if (tid < totalPixels) {
-        difference[tid] = (round((image[tid] - output[tid]) * (image[tid] - output[tid]) * (histogram[image[tid]] / 255.0)));
+        difference[tid] = (unsigned char) (round((image[tid] - output[tid]) * (image[tid] - output[tid]) * (histogram[image[tid]] / 255.0)));
     }
     return;
 }
@@ -429,7 +434,7 @@ void imageQuantization(Image *image, Image *output, int *levels, int numLevels) 
 
     // kernel call here
     imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, output->width, output->height, totalPixels, d_levels, numLevels);
-//    CUDA_CHECK_RETURN(cudaFree(d_levels));
+    CUDA_CHECK_RETURN(cudaFree(d_levels));
 }
 
 __device__ int result = 0;

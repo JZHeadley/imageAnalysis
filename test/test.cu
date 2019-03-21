@@ -226,10 +226,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             if (saveIntermediateImages) {
                 saveImage(output_image_folder, d_image, h_image, outputMat, extract_channel, curFilePath);
             }
-            if (!randomnessSet) {
-                setupRandomness(d_image);
-                randomnessSet = true;
-            }
+
 
             for (int i = 0; i < numOperations; i++) { // perform the operations on each image
                 bool supported = true;
@@ -281,6 +278,10 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     totalMedianFilterTime += milliseconds;
                     free(medKern);
                 } else if (type == "gaussian-noise") {
+                    if (!randomnessSet) {
+                        setupRandomness(d_image);
+                        randomnessSet = true;
+                    }
                     cudaEventRecord(operationStart);
                     float stdDev = operations[i]["std_dev"].asFloat();
                     float mean = operations[i]["mean"].asFloat();
@@ -292,6 +293,10 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalGaussianNoiseTime += milliseconds;
                 } else if (type == "salt-and-pepper") {
+                    if (!randomnessSet) {
+                        setupRandomness(d_image);
+                        randomnessSet = true;
+                    }
                     int level = operations[i]["intensity"].asInt();
                     cudaEventRecord(operationStart);
                     saltAndPepperNoise(d_image, d_tempImage, level);
@@ -329,6 +334,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                         printf("MSQE of imageQuantization is %i\n", MSQE);
                         totalMSQE += MSQE;
                     }
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
                     free(levels);
                     cudaEventRecord(operationStop);
