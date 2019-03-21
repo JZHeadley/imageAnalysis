@@ -447,14 +447,44 @@ void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev) {
     *stdDev = stdv;
 }
 
+#define CUDART_PI_F 3.141592654f
+
+
+__global__ void addGaussianNoiseToImage(unsigned char *image, unsigned char *output, int width, int height, int numPixels, float mean, float variance, curandState *states) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if (tid < numPixels) {
+        curandState localState = states[tid];
+        int randVal = curand_uniform(&localState) * (255 - 0 + .999999);
+        float noise = round((1 / (sqrt(2 * CUDART_PI_F * variance))) * exp(-1.0f * (((randVal - mean) * (randVal - mean)) / (2 * variance))));
+//        float noise = round(255 * exp(-1.0f * (((randVal - mean) * (randVal - mean)) / (2 * variance))));
+
+//        printf("noise %i %f %f %f %f\n", randVal, coef, exponent, blah, noise);
+        output[row * width + column] = (unsigned char) (image[row * width + column] + noise);
+    }
+    return;
+}
+
 void addGaussianNoise(Image *image, Image *output, float meanPar, float stdDevPar) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
     float mean = meanPar;
     float stdDev = stdDevPar;
     if (mean == -1 || stdDev == -1) {
         calculateMeanAndStdDev(image, &mean, &stdDev);
     }
-    printf("%f %f\n", mean, stdDev);
-    output->image = image->image;
+    addGaussianNoiseToImage<< < threadsPerBlock, blocksPerGrid>> > (image->image, output->image, image->width, image->height, totalPixels, mean, stdDev * stdDev, d_states);
+    cudaError_t error = cudaGetLastError();
+    if (error != cudaSuccess) {
+        // print the CUDA error message and exit
+        printf("CUDA error: %s\n", cudaGetErrorString(error));
+        exit(-1);
+    }
 }
 
 
@@ -474,10 +504,6 @@ void copyDeviceImageToHost(Image *device, Image *host) {
     host->image = (unsigned char *) malloc(sizeof(unsigned char) * host->height * host->width);
     // copy actual image data back to host from device
     CUDA_CHECK_RETURN(cudaMemcpy(host->image, device->image, sizeof(unsigned char) * device->width * device->height, cudaMemcpyDeviceToHost));
-//    for (int i = 0; i < (host->height * host->width); i++) {
-//        printf("%i\n", host->image[i]);
-//    }
-
 }
 
 void copyDeviceRGBImageToHost(RGBImage *device, RGBImage *host) {

@@ -267,8 +267,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
                 free(medKern);
             } else if (type == "gaussian-noise") {
-//                printf("Gaussian Noise\n");
-                addGaussianNoise(d_image, d_tempImage, -1, -1);
+                float stdDev = operations[i]["std_dev"].asFloat();
+                float mean = operations[i]["mean"].asFloat();
+                addGaussianNoise(d_image, d_tempImage, mean, stdDev);
                 d_image->image = d_tempImage->image;
 
             } else if (type == "salt-and-pepper") {

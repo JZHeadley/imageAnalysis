@@ -9,6 +9,13 @@
   "extract_channel": "grey",
   "operations": [
     {
+      "type": "gaussian-noise",
+      // set to -1 to calculate it from the image
+      "std_dev": -1,
+      //      // set to -1 to calculate it from the image
+      "mean": -1
+    },
+    {
       "type": "histogram-equalization"
     },
     {
@@ -33,15 +40,15 @@
         "width": 3,
         "height": 3,
         "values": [
-          -0.5,
-          10,
-          0.5,
           1,
           1,
           1,
-          -0.5,
           1,
-          0.5
+          1,
+          1,
+          1,
+          1,
+          1
         ]
       }
     },
@@ -66,13 +73,6 @@
           1
         ]
       }
-    },
-    {
-      "type": "gaussian-noise",
-      // set to -1 to calculate it from the image
-      "std_dev": 1,
-      //      // set to -1 to calculate it from the image
-      "mean": 1
     }
   ]
 }
