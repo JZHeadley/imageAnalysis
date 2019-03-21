@@ -213,103 +213,116 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
         curFilePath = files[k];
         printf("Working on image %s\n", curFilePath.c_str());
-        mat = imread(input_image_folder + "/" + curFilePath, CV_LOAD_IMAGE_COLOR);
+        try {
+            mat = imread(input_image_folder + "/" + curFilePath, CV_LOAD_IMAGE_COLOR);
 
-        convertMatToRGBImage(mat, h_rgbImage);
 
-        // convert image to a single color spectrum
-        if (extract_channel == "grey") {
-            copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
-            convertRGBToGrayscale(d_rgbImage, d_image, 0);
-        } else if (extract_channel == "red") {
-            extractSingleColorChannel(h_rgbImage, h_image, 0);
-            copyHostImageToDevice(h_image, d_image);
-        } else if (extract_channel == "green") {
-            extractSingleColorChannel(h_rgbImage, h_image, 1);
-            copyHostImageToDevice(h_image, d_image);
-        } else if (extract_channel == "blue") {
-            extractSingleColorChannel(h_rgbImage, h_image, 2);
-            copyHostImageToDevice(h_image, d_image);
-        } else {
-            printf("Unsupported color option: %s\n", extract_channel.c_str());
-            exit(-10);
-        }
-        if (saveIntermediateImages) {
-            saveImage(output_image_folder, d_image, h_image, outputMat, extract_channel, curFilePath);
-        }
-        if (!randomnessSet) {
-            setupRandomness(d_image);
-            randomnessSet = true;
-        }
+            convertMatToRGBImage(mat, h_rgbImage);
 
-        for (int i = 0; i < numOperations; i++) { // perform the operations on each image
-            bool supported = true;
-
-            string type = operations[i]["type"].asString();
-            if (type == "linear-filter") {
-                Json::Value kernel = operations[i]["kernel"];
-                k_width = kernel["width"].asInt();
-                k_height = kernel["height"].asInt();
-                kern = (float *) malloc(sizeof(float) * k_width * k_height);
-                readInKernel(kernel, kern, k_width * k_height);
-                linearFilter(d_image, d_tempImage, kern, k_width, k_height);
-                d_image->image = d_tempImage->image;
-
-                free(kern);
-            } else if (type == "median-filter") {
-                Json::Value kernel = operations[i]["kernel"];
-                k_width = kernel["width"].asInt();
-                k_height = kernel["height"].asInt();
-                medKern = (int *) malloc(sizeof(int) * k_width * k_height);
-                readInKernel(kernel, medKern, k_width * k_height);
-                medianFilter(d_image, d_tempImage, medKern, k_width, k_height);
-                d_image->image = d_tempImage->image;
-
-                free(medKern);
-            } else if (type == "gaussian-noise") {
-                float stdDev = operations[i]["std_dev"].asFloat();
-                float mean = operations[i]["mean"].asFloat();
-                addGaussianNoise(d_image, d_tempImage, mean, stdDev);
-                d_image->image = d_tempImage->image;
-
-            } else if (type == "salt-and-pepper") {
-                int level = operations[i]["intensity"].asInt();
-//                cudaStreamSynchronize(*stream);
-                saltAndPepperNoise(d_image, d_tempImage, level);
-                d_image->image = d_tempImage->image;
-
-            } else if (type == "histogram-equalization") {
-                calculateHistogram(d_image, h_histogram, d_histogram);
-                equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
-                equalizeImageWithHist(d_image, d_tempImage, h_mappings);
-                d_image->image = d_tempImage->image;
-            } else if (type == "quantization") {
-                const Json::Value &levelsJson = operations[i]["levels"];
-                int numLevels = levelsJson.size();
-                int *levels = (int *) malloc(sizeof(int) * 3 * numLevels);
-                for (int v = 0; v < numLevels; v++) {
-//                    k[i] = k_vals[i].asInt();
-                    Json::Value levelJson = levelsJson[v];
-                    levels[v * 3] = levelJson["min"].asInt();
-                    levels[v * 3 + 1] = levelJson["max"].asInt();
-                    levels[v * 3 + 2] = levelJson["val"].asInt();
-                }
-                imageQuantization(d_image, d_tempImage, levels, numLevels);
-                d_image->image = d_tempImage->image;
-                free(levels);
+            // convert image to a single color spectrum
+            if (extract_channel == "grey") {
+                copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
+                convertRGBToGrayscale(d_rgbImage, d_image, 0);
+            } else if (extract_channel == "red") {
+                extractSingleColorChannel(h_rgbImage, h_image, 0);
+                copyHostImageToDevice(h_image, d_image);
+            } else if (extract_channel == "green") {
+                extractSingleColorChannel(h_rgbImage, h_image, 1);
+                copyHostImageToDevice(h_image, d_image);
+            } else if (extract_channel == "blue") {
+                extractSingleColorChannel(h_rgbImage, h_image, 2);
+                copyHostImageToDevice(h_image, d_image);
             } else {
-                printf("Unsupported Operation\n");
-                supported = false;
+                printf("Unsupported color option: %s\n", extract_channel.c_str());
+                exit(-10);
             }
-            // copy images back to host and save intermediates if configured to do so...
-            if (saveIntermediateImages && supported) {
-                saveImage(output_image_folder, d_image, h_image, outputMat, type, curFilePath);
+            if (saveIntermediateImages) {
+                saveImage(output_image_folder, d_image, h_image, outputMat, extract_channel, curFilePath);
             }
-            supported = true;
-        }
-        // copy device image back to host and save it if configured to do so...
-        if (saveFinalImages) {
-            saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
+            if (!randomnessSet) {
+                setupRandomness(d_image);
+                randomnessSet = true;
+            }
+
+            for (int i = 0; i < numOperations; i++) { // perform the operations on each image
+                bool supported = true;
+
+                string type = operations[i]["type"].asString();
+                if (type == "linear-filter") {
+                    Json::Value kernel = operations[i]["kernel"];
+                    k_width = kernel["width"].asInt();
+                    k_height = kernel["height"].asInt();
+                    kern = (float *) malloc(sizeof(float) * k_width * k_height);
+                    readInKernel(kernel, kern, k_width * k_height);
+                    linearFilter(d_image, d_tempImage, kern, k_width, k_height);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    free(kern);
+                } else if (type == "median-filter") {
+                    Json::Value kernel = operations[i]["kernel"];
+                    k_width = kernel["width"].asInt();
+                    k_height = kernel["height"].asInt();
+                    medKern = (int *) malloc(sizeof(int) * k_width * k_height);
+                    readInKernel(kernel, medKern, k_width * k_height);
+                    medianFilter(d_image, d_tempImage, medKern, k_width, k_height);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    free(medKern);
+                } else if (type == "gaussian-noise") {
+                    float stdDev = operations[i]["std_dev"].asFloat();
+                    float mean = operations[i]["mean"].asFloat();
+                    addGaussianNoise(d_image, d_tempImage, mean, stdDev);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                } else if (type == "salt-and-pepper") {
+                    int level = operations[i]["intensity"].asInt();
+                    saltAndPepperNoise(d_image, d_tempImage, level);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                } else if (type == "histogram-equalization") {
+                    calculateHistogram(d_image, h_histogram, d_histogram);
+                    equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
+                    equalizeImageWithHist(d_image, d_tempImage, h_mappings);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                } else if (type == "quantization") {
+                    const Json::Value &levelsJson = operations[i]["levels"];
+                    int numLevels = levelsJson.size();
+                    int *levels = (int *) malloc(sizeof(int) * 3 * numLevels);
+                    for (int v = 0; v < numLevels; v++) {
+                        Json::Value levelJson = levelsJson[v];
+                        levels[v * 3] = levelJson["min"].asInt();
+                        levels[v * 3 + 1] = levelJson["max"].asInt();
+                        levels[v * 3 + 2] = levelJson["val"].asInt();
+                    }
+                    imageQuantization(d_image, d_tempImage, levels, numLevels);
+                    int MSQE = calcMSQE(d_image, d_tempImage);
+                    printf("MSQE of imageQuantization is %i\n", MSQE);
+                    d_image->image = d_tempImage->image;
+                    free(levels);
+                } else {
+                    printf("Unsupported Operation\n");
+                    supported = false;
+                }
+                // copy images back to host and save intermediates if configured to do so...
+                if (saveIntermediateImages && supported) {
+                    saveImage(output_image_folder, d_image, h_image, outputMat, type, curFilePath);
+                }
+                supported = true;
+            }
+            // copy device image back to host and save it if configured to do so...
+            if (saveFinalImages) {
+                saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
+            }
+        } catch (const std::exception &e) {
+            printf("Some sort of issue processing image %s\n", curFilePath.c_str());
+            cudaError_t error = cudaGetLastError();
+            if (error != cudaSuccess) {
+                // print the CUDA error message and exit
+                printf("CUDA error: %s\n", cudaGetErrorString(error));
+//                exit(-1);
+            }
+            continue;
         }
     }
 }

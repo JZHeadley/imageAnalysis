@@ -1,6 +1,9 @@
 #ifndef IMAGEANALYSIS_LIBRARY_H
 #define IMAGEANALYSIS_LIBRARY_H
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <iostream>
 
 // Declaring my own types so I don't have to link OpenCV to my library even though its probably about the same as theirs just with fewer features
 // Should be a little more easier to use whatever library you want to read in with as well since it just needs to be converted to this format
@@ -18,6 +21,19 @@ typedef struct {
     int width;
     int height;
 } Image;
+
+/**
+ * Check the return value of the CUDA runtime API call and exit
+ * the application if the call has failed.
+ */
+static void CheckCudaErrorAux(const char *file, unsigned line, const char *statement, cudaError_t err) {
+    if (err == cudaSuccess)
+        return;
+    std::cerr<<statement<<" returned "<<cudaGetErrorString(err)<<"("<<err<<") at "<<file<<":"<<line<<std::endl;
+    exit(1);
+}
+
+#define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value);
 
 /**
  * Helper method that takes in an rgb image to convert and then makes the correct cuda call and converts the response back
@@ -65,5 +81,7 @@ void extractSingleColorChannel(RGBImage *rgb, Image *out, int color);
 void setupRandomness(Image *image);
 
 void imageQuantization(Image *image, Image *output, int *levels, int numLevels);
+
+int calcMSQE(Image *d_image, Image *d_tempImage);
 
 #endif

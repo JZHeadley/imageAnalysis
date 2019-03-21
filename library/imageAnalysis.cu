@@ -1,8 +1,6 @@
 #include "imageAnalysis.h"
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <iostream>
+
 #include <math.h>
 
 #include <omp.h>
@@ -13,9 +11,6 @@
 #include <thrust/device_vector.h>
 #include <thrust/transform_reduce.h>
 
-static void CheckCudaErrorAux(const char *, unsigned, const char *, cudaError_t);
-
-#define CUDA_CHECK_RETURN(value) CheckCudaErrorAux(__FILE__,__LINE__, #value, value);
 
 curandState *d_states;
 
@@ -50,17 +45,16 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     int totalPixels = d_rgb->width * d_rgb->height;
     int threadsPerBlock = 512;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
     switch (method) {
         case 0:
             // luminance method
-            CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
             convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
         case 1:
             // average method
-            CUDA_CHECK_RETURN(cudaMalloc((void **) &(d_gray->image), (int) sizeof(unsigned char) * d_rgb->width * d_rgb->height));
 
             convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
             d_gray->width = d_rgb->width;
@@ -374,6 +368,32 @@ __global__ void imageQuantizationKernel(unsigned char *image, unsigned char *out
     return;
 }
 
+__global__ void arrayDifference(unsigned char *image, unsigned char *output, unsigned char *difference, int totalPixels) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid < totalPixels) {
+        difference[tid] = (round((image[tid] - output[tid]) * (image[tid] - output[tid]) * (1 / 255.0)));
+    }
+    return;
+}
+
+int calcMSQE(Image *image, Image *output) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    unsigned char *d_difference;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_difference, sizeof(unsigned char) * totalPixels));
+    arrayDifference<< < threadsPerBlock, blocksPerGrid>> > (image->image, output->image, d_difference, totalPixels);
+    thrust::device_ptr<unsigned char> dp = thrust::device_pointer_cast(d_difference);
+    thrust::device_vector<unsigned char> thrust_diff(dp, dp + totalPixels);
+    int sum = thrust::reduce(
+            thrust_diff.cbegin(),
+            thrust_diff.cend(),
+            0.0f,
+            thrust::plus<unsigned char>());
+    CUDA_CHECK_RETURN(cudaFree(d_difference));
+    return sum;
+}
+
 void imageQuantization(Image *image, Image *output, int *levels, int numLevels) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
@@ -447,7 +467,6 @@ void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev) {
     *stdDev = stdv;
 }
 
-#define CUDART_PI_F 3.141592654f
 
 
 __global__ void addGaussianNoiseToImage(unsigned char *image, unsigned char *output, int width, int height, int numPixels, float mean, float variance, curandState *states) {
@@ -457,8 +476,10 @@ __global__ void addGaussianNoiseToImage(unsigned char *image, unsigned char *out
     if (tid < numPixels) {
         curandState localState = states[tid];
         int randVal = curand_uniform(&localState) * (255 - 0 + .999999);
-        float noise = round((1 / (sqrt(2 * CUDART_PI_F * variance))) * exp(-1.0f * (((randVal - mean) * (randVal - mean)) / (2 * variance))));
-//        float noise = round(255 * exp(-1.0f * (((randVal - mean) * (randVal - mean)) / (2 * variance))));
+//        float noise = round((1 / (sqrt(2 * CUDART_PI_F * variance))) * exp(-1.0f * (((randVal - mean) * (randVal - mean)) / (2 * variance))));
+// based off the formula found here for pythons random normal
+// https://docs.scipy.org/doc/numpy/reference/generated/numpy.random.normal.html
+        float noise = round(255 * exp(-1.0f * (((randVal - mean) * (randVal - mean)) / (2 * variance))));
 
 //        printf("noise %i %f %f %f %f\n", randVal, coef, exponent, blah, noise);
         output[row * width + column] = (unsigned char) (image[row * width + column] + noise);
@@ -479,12 +500,7 @@ void addGaussianNoise(Image *image, Image *output, float meanPar, float stdDevPa
         calculateMeanAndStdDev(image, &mean, &stdDev);
     }
     addGaussianNoiseToImage<< < threadsPerBlock, blocksPerGrid>> > (image->image, output->image, image->width, image->height, totalPixels, mean, stdDev * stdDev, d_states);
-    cudaError_t error = cudaGetLastError();
-    if (error != cudaSuccess) {
-        // print the CUDA error message and exit
-        printf("CUDA error: %s\n", cudaGetErrorString(error));
-        exit(-1);
-    }
+
 }
 
 
@@ -531,13 +547,3 @@ void copyHostRGBImageToDevice(RGBImage *host, RGBImage *device) {
     device->channels = host->channels;
 }
 
-/**
- * Check the return value of the CUDA runtime API call and exit
- * the application if the call has failed.
- */
-static void CheckCudaErrorAux(const char *file, unsigned line, const char *statement, cudaError_t err) {
-    if (err == cudaSuccess)
-        return;
-    std::cerr<<statement<<" returned "<<cudaGetErrorString(err)<<"("<<err<<") at "<<file<<":"<<line<<std::endl;
-    exit(1);
-}

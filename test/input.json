@@ -1,7 +1,7 @@
 {
   "image_folder": "/home/jzheadley/projects/classes/cmsc630/project1/Cancerous cell smears",
   // regex pattern of types to match.  For example 'cyl|inter' will process all files starting with cyl or inter
-  "input_image_filter": "cyl",
+  "input_image_filter": "",
   "saveIntermediateImages": true,
   "saveFinalImages": true,
   "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
@@ -43,7 +43,7 @@
           1,
           1,
           1,
-          1,
+          10,
           1,
           1,
           1,
@@ -54,7 +54,7 @@
     },
     {
       "type": "salt-and-pepper",
-      "intensity": 2
+      "intensity": 50
     },
     {
       "type": "median-filter",
