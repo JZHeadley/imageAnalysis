@@ -19,7 +19,7 @@
 
 using namespace std;
 using namespace cv;
-
+#define LOGLEVEL 3
 //#define DEBUG_GRAYSCALE true
 #define DEBUG_GRAYSCALE false
 //#define DEBUG_HIST true
@@ -181,11 +181,14 @@ void saveImage(string output_image_folder, Image *d_image, Image *h_image, Mat *
     if (type.length() > 0) {
         outPath = output_image_folder + "/" + type + "-" + fileName;
     }
-    printf("writing to %s\n", outPath.c_str());
+
+    if (LOGLEVEL >= 5)
+        printf("writing to %s\n", outPath.c_str());
     imwrite(outPath, *outputMat);//, compression_params);
 }
 
-void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages, string extract_channel, regex fileFilter) {
+void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages, string extract_channel, regex fileFilter,
+                       bool calcMSQEConfig) {
     vector <string> files = getFileNames(input_image_folder, fileFilter);
     const Json::Value &operations = json["operations"];
     int numOperations = operations.size();
@@ -206,13 +209,33 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
 //    cudaStream_t *stream = new cudaStream_t;
-
+    cudaEvent_t operationStart, operationStop, batchStart, batchStop;
+    cudaEventCreate(&operationStart);
+    cudaEventCreate(&operationStop);
+    cudaEventCreate(&batchStart);
+    cudaEventCreate(&batchStop);
+    float milliseconds = 0;
+    float totalBatchTime = 0,
+            totalGrayscaleTime = 0,
+            totalSingleChannelConvertTime = 0,
+            totalGaussianNoiseTime = 0,
+            totalSaltAndPepperNoiseTime = 0,
+            totalHistEqualizationTime = 0,
+            totalQuantizationTime = 0,
+            totalLinearFilterTime = 0,
+            totalAverageFilterTime = 0,
+            totalMedianFilterTime = 0;
+    float totalMSQE = 0;
+    float numImages = files.size();
     Image *h_equalizedImage = new Image;
     bool randomnessSet = false;
+    cudaEventRecord(batchStart);
+
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
 
         curFilePath = files[k];
-        printf("Working on image %s\n", curFilePath.c_str());
+        if (LOGLEVEL >= 4)
+            printf("Working on image %s\n", curFilePath.c_str());
         try {
             mat = imread(input_image_folder + "/" + curFilePath, CV_LOAD_IMAGE_COLOR);
 
@@ -221,17 +244,45 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
             // convert image to a single color spectrum
             if (extract_channel == "grey") {
+                cudaEventRecord(operationStart);
+
                 copyHostRGBImageToDevice(h_rgbImage, d_rgbImage);
                 convertRGBToGrayscale(d_rgbImage, d_image, 0);
+
+                cudaEventRecord(operationStop);
+                cudaEventSynchronize(operationStop);
+                cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                totalGrayscaleTime += milliseconds;
             } else if (extract_channel == "red") {
+                cudaEventRecord(operationStart);
+
                 extractSingleColorChannel(h_rgbImage, h_image, 0);
                 copyHostImageToDevice(h_image, d_image);
+
+                cudaEventRecord(operationStop);
+                cudaEventSynchronize(operationStop);
+                cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                totalSingleChannelConvertTime += milliseconds;
             } else if (extract_channel == "green") {
+                cudaEventRecord(operationStart);
+
                 extractSingleColorChannel(h_rgbImage, h_image, 1);
                 copyHostImageToDevice(h_image, d_image);
+
+                cudaEventRecord(operationStop);
+                cudaEventSynchronize(operationStop);
+                cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                totalSingleChannelConvertTime += milliseconds;
             } else if (extract_channel == "blue") {
+                cudaEventRecord(operationStart);
+
                 extractSingleColorChannel(h_rgbImage, h_image, 2);
                 copyHostImageToDevice(h_image, d_image);
+
+                cudaEventRecord(operationStop);
+                cudaEventSynchronize(operationStop);
+                cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                totalSingleChannelConvertTime += milliseconds;
             } else {
                 printf("Unsupported color option: %s\n", extract_channel.c_str());
                 exit(-10);
@@ -254,9 +305,29 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     k_height = kernel["height"].asInt();
                     kern = (float *) malloc(sizeof(float) * k_width * k_height);
                     readInKernel(kernel, kern, k_width * k_height);
+                    cudaEventRecord(operationStart);
                     linearFilter(d_image, d_tempImage, kern, k_width, k_height);
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalLinearFilterTime += milliseconds;
+                    free(kern);
+                } else if (type == "average-filter") {
+                    Json::Value kernel = operations[i]["kernel"];
+                    k_width = kernel["width"].asInt();
+                    k_height = kernel["height"].asInt();
+                    kern = (float *) malloc(sizeof(float) * k_width * k_height);
+                    readInKernel(kernel, kern, k_width * k_height);
+                    cudaEventRecord(operationStart);
+                    averageFilter(d_image, d_tempImage, kern, k_width, k_height);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalAverageFilterTime += milliseconds;
                     free(kern);
                 } else if (type == "median-filter") {
                     Json::Value kernel = operations[i]["kernel"];
@@ -264,27 +335,47 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     k_height = kernel["height"].asInt();
                     medKern = (int *) malloc(sizeof(int) * k_width * k_height);
                     readInKernel(kernel, medKern, k_width * k_height);
+                    cudaEventRecord(operationStart);
                     medianFilter(d_image, d_tempImage, medKern, k_width, k_height);
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalMedianFilterTime += milliseconds;
                     free(medKern);
                 } else if (type == "gaussian-noise") {
+                    cudaEventRecord(operationStart);
                     float stdDev = operations[i]["std_dev"].asFloat();
                     float mean = operations[i]["mean"].asFloat();
                     addGaussianNoise(d_image, d_tempImage, mean, stdDev);
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalGaussianNoiseTime += milliseconds;
                 } else if (type == "salt-and-pepper") {
                     int level = operations[i]["intensity"].asInt();
+                    cudaEventRecord(operationStart);
                     saltAndPepperNoise(d_image, d_tempImage, level);
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalSaltAndPepperNoiseTime += milliseconds;
                 } else if (type == "histogram-equalization") {
+                    cudaEventRecord(operationStart);
                     calculateHistogram(d_image, h_histogram, d_histogram);
                     equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
                     equalizeImageWithHist(d_image, d_tempImage, h_mappings);
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalHistEqualizationTime += milliseconds;
                 } else if (type == "quantization") {
                     const Json::Value &levelsJson = operations[i]["levels"];
                     int numLevels = levelsJson.size();
@@ -295,11 +386,19 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                         levels[v * 3 + 1] = levelJson["max"].asInt();
                         levels[v * 3 + 2] = levelJson["val"].asInt();
                     }
+                    cudaEventRecord(operationStart);
                     imageQuantization(d_image, d_tempImage, levels, numLevels);
-                    int MSQE = calcMSQE(d_image, d_tempImage);
-                    printf("MSQE of imageQuantization is %i\n", MSQE);
+                    if (calcMSQEConfig) {
+                        int MSQE = calcMSQE(d_image, d_tempImage);
+                        printf("MSQE of imageQuantization is %i\n", MSQE);
+                        totalMSQE += MSQE;
+                    }
                     d_image->image = d_tempImage->image;
                     free(levels);
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalQuantizationTime += milliseconds;
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -314,17 +413,39 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             if (saveFinalImages) {
                 saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
             }
+            cudaEventRecord(batchStop);
+            cudaEventSynchronize(batchStop);
+            cudaEventElapsedTime(&milliseconds, batchStart, batchStop);
+            totalBatchTime += milliseconds;
         } catch (const std::exception &e) {
             printf("Some sort of issue processing image %s\n", curFilePath.c_str());
             cudaError_t error = cudaGetLastError();
             if (error != cudaSuccess) {
-                // print the CUDA error message and exit
                 printf("CUDA error: %s\n", cudaGetErrorString(error));
-//                exit(-1);
             }
+            numImages--;
             continue;
         }
     }
+    printf("Total time spent on the entire batch: %f ms average of %f ms for each image\n", totalBatchTime, totalBatchTime / numImages);
+    if (extract_channel == "grey") {
+        printf("Total time spent converting to grayscale: %f ms average of: %f ms per image\n", totalGrayscaleTime, totalGrayscaleTime / numImages);
+    } else {
+        printf("Total time spent converting to a single channel: %f ms average of: %f ms per image\n", totalSingleChannelConvertTime, totalSingleChannelConvertTime / numImages);
+    }
+    printf("Total time spent performing histogram equalization: %f ms average of: %f ms per image\n", totalHistEqualizationTime, totalHistEqualizationTime / numImages);
+    printf("Total time spent adding gaussian noise: %f ms average of: %f ms per image\n", totalGaussianNoiseTime, totalGaussianNoiseTime / numImages);
+    printf("Total time spent adding salt and pepper noise: %f ms average of: %f ms per image\n", totalSaltAndPepperNoiseTime, totalSaltAndPepperNoiseTime / numImages);
+    if (calcMSQEConfig) {
+        printf("Total time spent performing image quantization: %f ms average of: %f ms per image with an average MSQE of %f\n", totalQuantizationTime, totalQuantizationTime / numImages,
+               totalMSQE / numImages);
+    } else {
+        printf("Total time spent performing image quantization: %f ms average of: %f ms per image\n", totalQuantizationTime, totalQuantizationTime / numImages);
+    }
+    printf("Total time spent linear filtering image: %f ms average of: %f ms per image\n", totalLinearFilterTime, totalLinearFilterTime / numImages);
+    printf("Total time spent average filtering image: %f ms average of: %f ms per image\n", totalAverageFilterTime, totalAverageFilterTime / numImages);
+    printf("Total time spent median filtering image: %f ms average of: %f ms per image\n", totalMedianFilterTime, totalMedianFilterTime / numImages);
+
 }
 
 
@@ -340,12 +461,13 @@ int main(int argc, char *argv[]) {
     regex fileFilter = regex(json["input_image_filter"].asString());
     bool saveFinalImages = json["saveFinalImages"].asBool();
     bool saveIntermediateImages = json["saveIntermediateImages"].asBool();
+    bool calcMSQEConfig = json["calc_MSQE"].asBool();
     printf("Input: %s\nOutput: %s\nSaving intermediates: %s\nSaving Finals: %s\n",
            input_image_folder.c_str(),
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
            saveFinalImages ? "true" : "false");
-    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel, fileFilter);
+    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel, fileFilter, calcMSQEConfig);
 
 
     return 0;

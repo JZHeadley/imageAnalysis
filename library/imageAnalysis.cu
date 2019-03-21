@@ -190,6 +190,20 @@ __global__ void averageFilter(unsigned char *image, unsigned char *output, int w
     return;
 }
 
+void averageFilter(Image *image, Image *output, float *kernel, int kWidth, int kHeight) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
+    float *d_kernel;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_kernel, sizeof(float) * kWidth * kHeight));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice));
+    averageFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight);
+    CUDA_CHECK_RETURN(cudaFree(d_kernel));
+}
+
 //TODO: convert this to not an average filter and do normalization on the result of this instead of averaging.
 __global__ void linearFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -368,10 +382,10 @@ __global__ void imageQuantizationKernel(unsigned char *image, unsigned char *out
     return;
 }
 
-__global__ void arrayDifference(unsigned char *image, unsigned char *output, unsigned char *difference, int totalPixels) {
+__global__ void arrayDifference(unsigned char *image, unsigned char *output, unsigned char *difference, int *histogram, int totalPixels) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     if (tid < totalPixels) {
-        difference[tid] = (round((image[tid] - output[tid]) * (image[tid] - output[tid]) * (1 / 255.0)));
+        difference[tid] = (round((image[tid] - output[tid]) * (image[tid] - output[tid]) * (histogram[image[tid]] / 255.0)));
     }
     return;
 }
@@ -382,7 +396,12 @@ int calcMSQE(Image *image, Image *output) {
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     unsigned char *d_difference;
     CUDA_CHECK_RETURN(cudaMalloc(&d_difference, sizeof(unsigned char) * totalPixels));
-    arrayDifference<< < threadsPerBlock, blocksPerGrid>> > (image->image, output->image, d_difference, totalPixels);
+    int *h_histogram = (int *) malloc(sizeof(int) * 255);
+    int *d_histogram;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_histogram, sizeof(int) * 255));
+    calculateHistogram(image, h_histogram, d_histogram);
+
+    arrayDifference<< < threadsPerBlock, blocksPerGrid>> > (image->image, output->image, d_difference, d_histogram, totalPixels);
     thrust::device_ptr<unsigned char> dp = thrust::device_pointer_cast(d_difference);
     thrust::device_vector<unsigned char> thrust_diff(dp, dp + totalPixels);
     int sum = thrust::reduce(
@@ -391,6 +410,9 @@ int calcMSQE(Image *image, Image *output) {
             0.0f,
             thrust::plus<unsigned char>());
     CUDA_CHECK_RETURN(cudaFree(d_difference));
+    CUDA_CHECK_RETURN(cudaFree(d_histogram));
+    free(h_histogram);
+
     return sum;
 }
 
@@ -466,7 +488,6 @@ void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev) {
     *mean = meanCalc;
     *stdDev = stdv;
 }
-
 
 
 __global__ void addGaussianNoiseToImage(unsigned char *image, unsigned char *output, int width, int height, int numPixels, float mean, float variance, curandState *states) {

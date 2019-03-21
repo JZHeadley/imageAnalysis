@@ -4,6 +4,7 @@
   "input_image_filter": "",
   "saveIntermediateImages": true,
   "saveFinalImages": true,
+  "calc_MSQE": false,
   "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
   // red, blue, green, or grey
   "extract_channel": "grey",
@@ -36,6 +37,24 @@
     },
     {
       "type": "linear-filter",
+      "kernel": {
+        "width": 3,
+        "height": 3,
+        "values": [
+          1,
+          1,
+          1,
+          10,
+          1,
+          1,
+          1,
+          1,
+          1
+        ]
+      }
+    },
+    {
+      "type": "average-filter",
       "kernel": {
         "width": 3,
         "height": 3,

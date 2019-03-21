@@ -61,6 +61,8 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
 
 void linearFilter(Image *image, Image *output, float *kernel, int kWidth, int kHeight);
 
+void averageFilter(Image *image, Image *output, float *kernel, int kWidth, int kHeight);
+
 void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight);
 
 void saltAndPepperNoise(Image *image, Image *output, int level);
