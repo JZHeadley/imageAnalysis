@@ -204,7 +204,6 @@ void averageFilter(Image *image, Image *output, float *kernel, int kWidth, int k
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
 }
 
-//TODO: convert this to not an average filter and do normalization on the result of this instead of averaging.
 __global__ void linearFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
@@ -228,7 +227,6 @@ __global__ void linearFilter(unsigned char *image, unsigned char *output, int wi
             else if (sum < 0)
                 sum = 0;
             output[row * width + column] = (unsigned char) sum;
-//            printf("%i\n", output[tid]);
         }
     }
     return;
@@ -246,7 +244,6 @@ void linearFilter(Image *image, Image *output, float *kernel, int kWidth, int kH
     CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice));
     linearFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight);
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
-
 }
 
 __global__ void combineFilters(unsigned char *sobelX, unsigned char *sobelY, unsigned char *output, int totalPixels) {
@@ -259,7 +256,7 @@ __global__ void combineFilters(unsigned char *sobelX, unsigned char *sobelY, uns
 
 float *d_sobelX, *d_sobelY;
 
-void setupSobel() {
+void setupEdgeDetection() {
     float sobelX[9] = {-1, 0, 1, -2, 0, 2, -1, 0, 1};
     float sobelY[9] = {-1, -2, -1, 0, 0, 0, 1, 2, 1};
     CUDA_CHECK_RETURN(cudaMalloc(&d_sobelX, sizeof(float) * 9))
@@ -269,7 +266,7 @@ void setupSobel() {
     CUDA_CHECK_RETURN(cudaMemcpy(d_sobelY, sobelY, sizeof(float) * 9, cudaMemcpyHostToDevice))
 }
 
-void cleanupSobel() {
+void cleanupEdgeDetection() {
     CUDA_CHECK_RETURN(cudaFree(d_sobelX))
     CUDA_CHECK_RETURN(cudaFree(d_sobelY))
 }
@@ -291,6 +288,56 @@ void sobelFilter(Image *image, Image *output) {
     CUDA_CHECK_RETURN(cudaFree(d_sobelXImage))
     CUDA_CHECK_RETURN(cudaFree(d_sobelYImage))
 
+}
+
+__global__ void compassFilterKern(unsigned char *image, unsigned char *output, int width, int height, int totalPixels) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+
+    if ((tid < totalPixels)) {
+
+        float sobel0[9] = {-1, 0, 1, -2, 0, 2, -1, 0, 1};
+        float sobel1[9] = {-2, -1, 0, -1, 0, 1, 0, 1, 2};
+        float sobel2[9] = {-1, -2, -1, 0, 0, 0, 1, 2, 1};
+        float sobel3[9] = {0, -1, -2, 1, 0, -1, 2, 1, 0};
+        float *filters[4] = {sobel0, sobel1, sobel2, sobel3};
+        if (row < 1 || row > (height - 1) || column < 1 || column > (width - 1)) {
+            output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
+        } else {
+            int sum = 0;
+            int maxSum = 0;
+            int k = 0;
+            for (int f = 0; f < 4; f++) {
+                for (int i = row - 1; i <= row + 1; i++) {
+                    for (int j = column - 1; j <= column + 1; j++) {
+                        sum += image[i * width + j] * (filters[f][k]);
+                        k++;
+                    }
+                }
+                sum = max(sum, sum * -1);
+                maxSum = max(sum, maxSum);
+            }
+            if (maxSum > 255)
+                maxSum = 255;
+            else if (maxSum < 0)
+                maxSum = 0;
+            output[row * width + column] = (unsigned char) maxSum;
+        }
+    }
+    return;
+}
+
+
+
+void compassFilter(Image *image, Image *output) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
+    compassFilterKern<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels);
 }
 
 __global__ void medianFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *kernel, int kWidth, int kHeight, int *filteredVals, int kernSum) {
@@ -416,27 +463,18 @@ void saltAndPepperNoise(Image *image, Image *output, int level) {
     generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_states, level);
 }
 
-__global__ void imageQuantizationKernel(unsigned char *image, unsigned char *output, int width, int totalPixels, int *levels, int numLevels) {
-
+__global__ void imageQuantizationKernel(unsigned char *image, unsigned char *output, int totalPixels, int *levels, int numLevels) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    int row = tid / width;
-    int column = tid - ((tid / width) * width);
-    bool leveled = false;
     if (tid < totalPixels) {
         for (int i = 0; i < numLevels; i++) {
             if (image[tid] >= levels[i * 3] && image[tid] < levels[i * 3 + 1]) {
 //                printf("value %i is between %i and %i and was set to %i\n", image[tid], levels[i * 3], levels[i * 3 + 1], levels[i * 3 + 2]);
                 output[tid] = (unsigned char) levels[i * 3 + 2];
-                leveled = true;
                 break;
             } else {
                 output[tid] = image[tid];
             }
         }
-//        if (!leveled) {
-//            printf("not leveled\n");
-//            output[row * width + column] = image[row * width + column];
-//        }
     }
     return;
 }
@@ -484,32 +522,11 @@ void imageQuantization(Image *image, Image *output, int *levels, int numLevels) 
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
     int *d_levels;
     CUDA_CHECK_RETURN(cudaMalloc(&d_levels, sizeof(int) * numLevels * 3));
-    CUDA_CHECK_RETURN(cudaMemcpy(d_levels, levels, sizeof(int) * 3 * numLevels, cudaMemcpyHostToDevice));
+    CUDA_CHECK_RETURN(cudaMemcpy(d_levels, levels, sizeof(int) * 3 * numLevels, cudaMemcpyHostToDevice))
 
     // kernel call here
-    imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, output->width, output->height, totalPixels, d_levels, numLevels);
-    CUDA_CHECK_RETURN(cudaFree(d_levels));
-}
-
-__device__ int result = 0;
-
-__global__ void sumReduction(unsigned char *array, int numElements) {
-    __shared__ int sharedMemory[512];
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    sharedMemory[threadIdx.x] = (tid < numElements) ? array[tid] : 0;
-    __syncthreads();
-    // do reduction in shared memory
-    for (int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (threadIdx.x < s)
-            sharedMemory[threadIdx.x] += sharedMemory[threadIdx.x + s];
-        __syncthreads();
-    }
-    // write result for this block to global memory
-    if (threadIdx.x == 0) {
-        atomicAdd(&result, sharedMemory[0]);
-        printf("result %i\n", result);
-    }
-    return;
+    imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, totalPixels, d_levels, numLevels);
+    CUDA_CHECK_RETURN(cudaFree(d_levels))
 }
 
 // this method of calculating mean and variance with thrust came from here https://stackoverflow.com/a/41862431

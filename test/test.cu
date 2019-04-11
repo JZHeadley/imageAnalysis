@@ -228,6 +228,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalGaussianNoiseTime = 0,
             totalSaltAndPepperNoiseTime = 0,
             totalHistEqualizationTime = 0,
+            totalCompassFilterTime = 0,
             totalQuantizationTime = 0,
             totalLinearFilterTime = 0,
             totalSobelFilterTime = 0,
@@ -417,7 +418,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     totalQuantizationTime += milliseconds;
                 } else if (type == "sobel-filter") {
                     if (!sobelSet) {
-                        setupSobel();
+                        setupEdgeDetection();
                         sobelSet = true;
                     }
                     cudaEventRecord(operationStart);
@@ -428,6 +429,19 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventSynchronize(operationStop);
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalSobelFilterTime += milliseconds;
+                } else if (type == "compass-filter") {
+                    if (!sobelSet) {
+                        setupEdgeDetection();
+                        sobelSet = true;
+                    }
+                    cudaEventRecord(operationStart);
+                    compassFilter(d_image, d_tempImage);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalCompassFilterTime += milliseconds;
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -457,7 +471,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         }
     }
     if (sobelSet) {
-        cleanupSobel();
+        cleanupEdgeDetection();
     }
     if (randomnessSet) {
         cleanupRandomness();
@@ -481,6 +495,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     printf("Total time spent average filtering image: %0.4f ms average of: %0.4f ms per image\n", totalAverageFilterTime, totalAverageFilterTime / numImages);
     printf("Total time spent median filtering image: %0.4f ms average of: %0.4f ms per image\n", totalMedianFilterTime, totalMedianFilterTime / numImages);
     printf("Total time spent Sobel filtering image: %0.4f ms average of: %0.4f ms per image\n", totalSobelFilterTime, totalSobelFilterTime / numImages);
+    printf("Total time spent Compass filtering image: %0.4f ms average of: %0.4f ms per image\n", totalCompassFilterTime, totalCompassFilterTime / numImages);
     if (CALC_AVG_HIST) {
         for (int i = 0; i < 256; i++) {
             totalHist[i] = totalHist[i] / numImages;
