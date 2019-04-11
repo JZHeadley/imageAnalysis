@@ -14,7 +14,7 @@
 
 curandState *d_states;
 
-__global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, int height, int numPixels, int channels, unsigned char *output) {
+__global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, int numPixels, unsigned char *output) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
     int column = tid - ((tid / width) * width);
@@ -25,7 +25,7 @@ __global__ void convertRGBToGrayscaleLuminance(unsigned char *image, int width, 
     return;
 }
 
-__global__ void convertRGBToGrayscaleAverage(unsigned char *image, int width, int height, int numPixels, int channels, unsigned char *output) {
+__global__ void convertRGBToGrayscaleAverage(unsigned char *image, int width, int numPixels, unsigned char *output) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
     int column = tid - ((tid / width) * width);
@@ -49,14 +49,14 @@ void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     switch (method) {
         case 0:
             // luminance method
-            convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
+            convertRGBToGrayscaleLuminance<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, totalPixels, d_gray->image);
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
         case 1:
             // average method
 
-            convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, d_rgb->height, totalPixels, d_rgb->channels, d_gray->image);
+            convertRGBToGrayscaleAverage<< < threadsPerBlock, blocksPerGrid>> > (d_rgb->image, d_rgb->width, totalPixels, d_gray->image);
             d_gray->width = d_rgb->width;
             d_gray->height = d_rgb->height;
             break;
@@ -176,7 +176,7 @@ __global__ void dilateImage(unsigned char *image, unsigned char *output, int wid
         int sideToSide = (kWidth - 1) / 2;
         if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
             output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
-        } else if (image[tid] > 40) { //TODO: need to actually pass in a binary image so I'm not thresholding here because I definitely shouldn't be doing this...
+        } else if (image[tid] > 0) {
             for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
                 for (int j = column - sideToSide; j <= column + sideToSide; j++) {
                     output[i * width + j] = (unsigned char) (structuringElement[k] ? 255 : 0);
@@ -191,6 +191,30 @@ __global__ void dilateImage(unsigned char *image, unsigned char *output, int wid
     return;
 }
 
+/**
+ * Returns an image with all pixels above the threshold as white and everything else as black
+ */
+__global__ void thresholding(unsigned char *image, unsigned char *out, int numPixels, int threshold) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid < numPixels) {
+        if (image[tid] > threshold)
+            out[tid] = 255;
+        else
+            out[tid] = 0;
+    }
+    return;
+}
+
+void thresholdImage(Image *image, Image *output, int threshold) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
+    thresholding<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, totalPixels, threshold);
+}
+
 void imageDilation(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
@@ -201,10 +225,57 @@ void imageDilation(Image *image, Image *output, int *structuringElement, int kWi
     float *d_structuringElement;
     CUDA_CHECK_RETURN(cudaMalloc(&d_structuringElement, sizeof(float) * kWidth * kHeight))
     CUDA_CHECK_RETURN(cudaMemcpy(d_structuringElement, structuringElement, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice))
-
     dilateImage<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_structuringElement, kWidth, kHeight);
+    CUDA_CHECK_RETURN(cudaFree(d_structuringElement))
 
-    CUDA_CHECK_RETURN(cudaFree(d_structuringElement));
+    return;
+}
+
+__global__ void erodeImage(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *structuringElement, int kWidth, int kHeight) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if ((tid < totalPixels)) {
+        int k = 0;
+        int aboveBelow = (kHeight - 1) / 2;
+        int sideToSide = (kWidth - 1) / 2;
+        if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
+            output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
+        } else if (image[tid] > 0) {
+            int cond = true;
+            for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
+                for (int j = column - sideToSide; j <= column + sideToSide; j++) {
+                    if (structuringElement[k] != 0) {
+                        cond &= image[i * width + j] && structuringElement[k];
+                    }
+                    k++;
+                }
+            }
+            if (cond)
+                output[tid] = image[tid];
+            else
+                output[tid] = 0;
+        } else {
+            output[tid] = image[tid];
+        }
+
+    }
+    return;
+}
+
+void imageErosion(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
+    float *d_structuringElement;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_structuringElement, sizeof(float) * kWidth * kHeight))
+    CUDA_CHECK_RETURN(cudaMemcpy(d_structuringElement, structuringElement, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice))
+    erodeImage<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_structuringElement, kWidth, kHeight);
+    CUDA_CHECK_RETURN(cudaFree(d_structuringElement))
+
     return;
 }
 
@@ -457,7 +528,7 @@ __global__ void setup_kernel(curandState *state) {
     return;
 }
 
-__global__ void generateSaltAndPepper(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, curandState *states, int level) {
+__global__ void generateSaltAndPepper(unsigned char *image, unsigned char *output, int width, int totalPixels, curandState *states, int level) {
     // VERY loosely based off https://www.projectrhea.org/rhea/index.php/How_to_Create_Salt_and_Pepper_Noise_in_an_Image
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
@@ -501,7 +572,7 @@ void saltAndPepperNoise(Image *image, Image *output, int level) {
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height));
 
-    generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_states, level);
+    generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, totalPixels, d_states, level);
 }
 
 __global__ void imageQuantizationKernel(unsigned char *image, unsigned char *output, int totalPixels, int *levels, int numLevels) {
@@ -607,7 +678,7 @@ void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev) {
 }
 
 
-__global__ void addGaussianNoiseToImage(unsigned char *image, unsigned char *output, int width, int height, int numPixels, float mean, float variance, curandState *states) {
+__global__ void addGaussianNoiseToImage(unsigned char *image, unsigned char *output, int width, int numPixels, float mean, float variance, curandState *states) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
     int column = tid - ((tid / width) * width);
@@ -637,7 +708,7 @@ void addGaussianNoise(Image *image, Image *output, float meanPar, float stdDevPa
     if (mean == -1 || stdDev == -1) {
         calculateMeanAndStdDev(image, &mean, &stdDev);
     }
-    addGaussianNoiseToImage<< < threadsPerBlock, blocksPerGrid>> > (image->image, output->image, image->width, image->height, totalPixels, mean, stdDev * stdDev, d_states);
+    addGaussianNoiseToImage<< < threadsPerBlock, blocksPerGrid>> > (image->image, output->image, image->width, totalPixels, mean, stdDev * stdDev, d_states);
 
 }
 

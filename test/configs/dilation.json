@@ -13,6 +13,10 @@
       "type": "compass-filter"
     },
     {
+      "type": "threshold",
+      "threshold": 40
+    },
+    {
       "type": "dilation",
       "structuring-element": {
         "width": 3,

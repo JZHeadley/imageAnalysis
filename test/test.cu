@@ -136,6 +136,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     string curFilePath;
     int k_width;
     int k_height;
+    int threshold;
     float *kern;
     int *medKern;
     Mat mat;
@@ -169,6 +170,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalCompassFilterTime = 0,
             totalDilationTime = 0,
             totalErosionTime = 0,
+            totalThresholdTime = 0,
             totalQuantizationTime = 0,
             totalLinearFilterTime = 0,
             totalSobelFilterTime = 0,
@@ -176,7 +178,6 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalMedianFilterTime = 0;
     float totalMSQE = 0;
     float numImages = files.size();
-    Image *h_equalizedImage = new Image;
     bool randomnessSet = false;
     bool sobelSet = false;
     cudaEventRecord(batchStart);
@@ -397,6 +398,31 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalDilationTime += milliseconds;
                     free(structuringElement);
+                } else if (type == "erosion") {
+                    Json::Value structuringElementJson = operations[i]["structuring-element"];
+                    k_width = structuringElementJson["width"].asInt();
+                    k_height = structuringElementJson["height"].asInt();
+                    int *structuringElement = (int *) malloc(sizeof(int) * k_width * k_height);
+                    readInKernel(structuringElementJson, structuringElement, k_width * k_height);
+                    cudaEventRecord(operationStart);
+                    imageErosion(d_image, d_tempImage, structuringElement, k_width, k_height);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalErosionTime += milliseconds;
+                    free(structuringElement);
+                } else if (type == "threshold") {
+                    threshold = operations[i]["threshold"].asInt();
+                    cudaEventRecord(operationStart);
+                    thresholdImage(d_image, d_tempImage, threshold);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalThresholdTime += milliseconds;
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -452,6 +478,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
     printf("Total time spent Sobel filtering images: %0.4f ms average of: %0.4f ms per image\n", totalSobelFilterTime, totalSobelFilterTime / numImages);
     printf("Total time spent Compass filtering images: %0.4f ms average of: %0.4f ms per image\n", totalCompassFilterTime, totalCompassFilterTime / numImages);
+
+    printf("Total time spent thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalThresholdTime, totalThresholdTime / numImages);
 
     printf("Total time spent dilating images: %0.4f ms average of: %0.4f ms per image\n", totalDilationTime, totalDilationTime / numImages);
     printf("Total time spent eroding images: %0.4f ms average of: %0.4f ms per image\n", totalErosionTime, totalErosionTime / numImages);
