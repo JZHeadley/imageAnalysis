@@ -11,7 +11,7 @@ hunter_add_package(jsoncpp)
 #hunter_add_package(Boost COMPONENTS filesystem )
 #find_package(Boost COMPONENTS filesystem REQUIRED)
 
-find_package(OpenCV REQUIRED)
+find_package(OpenCV REQUIRED core imgproc highgui)
 find_package(OpenMP)
 find_package(jsoncpp CONFIG REQUIRED)
 

@@ -65,9 +65,17 @@ void averageFilter(Image *image, Image *output, float *kernel, int kWidth, int k
 
 void medianFilter(Image *image, Image *output, int *kernel, int kWidth, int kHeight);
 
+void sobelFilter(Image *image, Image *output);
+
 void saltAndPepperNoise(Image *image, Image *output, int level);
 
 void addGaussianNoise(Image *image, Image *output, float mean, float stdDev);
+
+void cleanupSobel();
+
+void setupSobel();
+
+void cleanupRandomness();
 
 /**
  *

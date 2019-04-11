@@ -9,23 +9,11 @@
   // red, blue, green, or grey
   "extract_channel": "grey",
   "operations": [
+//    {
+//      "type": "histogram-equalization"
+//    },
     {
-      "type": "linear-filter",
-      "kernel": {
-        "width": 3,
-        "height": 3,
-        "values": [
-          -1,
-          -2,
-          -1,
-          0,
-          0,
-          0,
-          -1,
-          -2,
-          -1
-        ]
-      }
+      "type": "sobel-filter"
     }
   ]
 }

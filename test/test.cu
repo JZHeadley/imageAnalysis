@@ -19,7 +19,7 @@
 
 using namespace std;
 using namespace cv;
-#define LOGLEVEL 5
+#define LOGLEVEL 3
 //#define DEBUG_GRAYSCALE true
 #define DEBUG_GRAYSCALE false
 //#define DEBUG_HIST true
@@ -32,8 +32,10 @@ using namespace cv;
 #define DEBUG_MEDFILTER false
 // I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
+#define CALC_AVG_HIST false
 
 vector<int> compression_params;
+
 
 void convertMatToRGBImage(Mat mat, RGBImage *output) {
     Mat bgr[3];
@@ -111,6 +113,70 @@ vector <string> getFileNames(string input_image_folder, regex filter) {
 
 }
 
+/*
+ * The following few functions are related to drawing a histogram and I didn't write them myself.
+ * I mentioned it to a friend and he wrote them for the fun of it.  They shouldn't make it into whatever I turn in and are not required functions so I figure its fine for testing things out.
+ */
+int findMax(int *arr, int len) {
+    int m = -1;
+    for (int i = 0; i < len; i++) {
+        if (arr[i] > m) {
+            m = arr[i];
+        }
+    }
+    return m;
+}
+
+int getTerminalWidth() {
+    struct winsize w;
+    ioctl(0, TIOCGWINSZ, &w);
+    return w.ws_col;
+}
+
+void padWithZeroes(char *str, int num, int numDigits) {
+    int i = 0;
+    if (num == 0) {
+        for (int i = 0; i < numDigits; i++) {
+            str[i] = '0';
+        }
+    } else {
+        while (num * pow(10, i) < pow(10, numDigits - 1)) {
+            str[i] = '0';
+            i++;
+        }
+        sprintf(str + i, "%d", num);
+    }
+}
+
+void drawHistogram(int *arr, int len) {
+    int max = findMax(arr, len);
+    int numDigits = 0;
+    int width = getTerminalWidth() - 5;
+    int dw = max / width;
+    while (pow(10, numDigits) < len) {
+        numDigits++;
+    }
+    width = getTerminalWidth() - (numDigits + 2);
+    dw = max / width;
+    printf("%d, %d, %d\n", max, width, dw);
+    for (int i = 0; i < len; i++) {
+        char string[numDigits + 2];
+        padWithZeroes(string, i, numDigits);
+        printf("\n");
+        printf("%s|", string);
+        for (int j = 0; j < width - numDigits + 2; j++) {
+            if (arr[i] > dw * j) {
+                printf("#");
+            } else {
+                break;
+            }
+        }
+    }
+    printf("\n");
+}
+// end not my work
+
+
 void saveImage(string output_image_folder, Image *d_image, Image *h_image, Mat *outputMat, string type, string fileName) {
     copyDeviceImageToHost(d_image, h_image);
     convertImageToMat(h_image, outputMat);
@@ -137,6 +203,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Mat mat;
     int *h_histogram = nullptr;
     int *d_histogram = nullptr;
+    int totalHist[256] = {0};
     int h_mappings[256];
     cudaMallocHost(&h_histogram, sizeof(int) * 256);
     RGBImage *h_rgbImage = new RGBImage;
@@ -163,12 +230,14 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalHistEqualizationTime = 0,
             totalQuantizationTime = 0,
             totalLinearFilterTime = 0,
+            totalSobelFilterTime = 0,
             totalAverageFilterTime = 0,
             totalMedianFilterTime = 0;
     float totalMSQE = 0;
     float numImages = files.size();
     Image *h_equalizedImage = new Image;
     bool randomnessSet = false;
+    bool sobelSet = false;
     cudaEventRecord(batchStart);
 
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
@@ -309,6 +378,11 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                 } else if (type == "histogram-equalization") {
                     cudaEventRecord(operationStart);
                     calculateHistogram(d_image, h_histogram, d_histogram);
+                    if (CALC_AVG_HIST) {
+                        for (int z = 0; z < 256; z++) {
+                            totalHist[z] += h_histogram[z];
+                        }
+                    }
                     equalizeHistogram(h_histogram, h_mappings, d_image->height * d_image->width);
                     equalizeImageWithHist(d_image, d_tempImage, h_mappings);
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
@@ -341,6 +415,19 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventSynchronize(operationStop);
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalQuantizationTime += milliseconds;
+                } else if (type == "sobel-filter") {
+                    if (!sobelSet) {
+                        setupSobel();
+                        sobelSet = true;
+                    }
+                    cudaEventRecord(operationStart);
+                    sobelFilter(d_image, d_tempImage);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalSobelFilterTime += milliseconds;
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -358,7 +445,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             cudaEventRecord(batchStop);
             cudaEventSynchronize(batchStop);
             cudaEventElapsedTime(&milliseconds, batchStart, batchStop);
-            totalBatchTime += milliseconds;
+            totalBatchTime = milliseconds;
         } catch (const std::exception &e) {
             printf("Some sort of issue processing image %s\n", curFilePath.c_str());
             cudaError_t error = cudaGetLastError();
@@ -368,6 +455,12 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             numImages--;
             continue;
         }
+    }
+    if (sobelSet) {
+        cleanupSobel();
+    }
+    if (randomnessSet) {
+        cleanupRandomness();
     }
     printf("\n\nTotal time spent on the entire batch: %0.4f ms average of %0.4f ms for each image\n", totalBatchTime, totalBatchTime / numImages);
     if (extract_channel == "grey") {
@@ -387,6 +480,13 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     printf("Total time spent linear filtering image: %0.4f ms average of: %0.4f ms per image\n", totalLinearFilterTime, totalLinearFilterTime / numImages);
     printf("Total time spent average filtering image: %0.4f ms average of: %0.4f ms per image\n", totalAverageFilterTime, totalAverageFilterTime / numImages);
     printf("Total time spent median filtering image: %0.4f ms average of: %0.4f ms per image\n", totalMedianFilterTime, totalMedianFilterTime / numImages);
+    printf("Total time spent Sobel filtering image: %0.4f ms average of: %0.4f ms per image\n", totalSobelFilterTime, totalSobelFilterTime / numImages);
+    if (CALC_AVG_HIST) {
+        for (int i = 0; i < 256; i++) {
+            totalHist[i] = totalHist[i] / numImages;
+        }
+        drawHistogram(totalHist, 256);
+    }
 
 }
 

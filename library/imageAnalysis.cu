@@ -223,7 +223,12 @@ __global__ void linearFilter(unsigned char *image, unsigned char *output, int wi
                     k++;
                 }
             }
-            output[row * width + column] = (unsigned char) (sum);
+            if (sum > 255)
+                sum = 255;
+            else if (sum < 0)
+                sum = 0;
+            output[row * width + column] = (unsigned char) sum;
+//            printf("%i\n", output[tid]);
         }
     }
     return;
@@ -241,6 +246,50 @@ void linearFilter(Image *image, Image *output, float *kernel, int kWidth, int kH
     CUDA_CHECK_RETURN(cudaMemcpy(d_kernel, kernel, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice));
     linearFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_kernel, kWidth, kHeight);
     CUDA_CHECK_RETURN(cudaFree(d_kernel));
+
+}
+
+__global__ void combineFilters(unsigned char *sobelX, unsigned char *sobelY, unsigned char *output, int totalPixels) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid < totalPixels) {
+        output[tid] = sqrtf((sobelX[tid] * sobelX[tid]) + (sobelY[tid] * sobelY[tid]));
+    }
+    return;
+}
+
+float *d_sobelX, *d_sobelY;
+
+void setupSobel() {
+    float sobelX[9] = {-1, 0, 1, -2, 0, 2, -1, 0, 1};
+    float sobelY[9] = {-1, -2, -1, 0, 0, 0, 1, 2, 1};
+    CUDA_CHECK_RETURN(cudaMalloc(&d_sobelX, sizeof(float) * 9))
+    CUDA_CHECK_RETURN(cudaMemcpy(d_sobelX, sobelX, sizeof(float) * 9, cudaMemcpyHostToDevice))
+
+    CUDA_CHECK_RETURN(cudaMalloc(&d_sobelY, sizeof(float) * 9))
+    CUDA_CHECK_RETURN(cudaMemcpy(d_sobelY, sobelY, sizeof(float) * 9, cudaMemcpyHostToDevice))
+}
+
+void cleanupSobel() {
+    CUDA_CHECK_RETURN(cudaFree(d_sobelX))
+    CUDA_CHECK_RETURN(cudaFree(d_sobelY))
+}
+
+void sobelFilter(Image *image, Image *output) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
+    unsigned char *d_sobelXImage, *d_sobelYImage;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_sobelXImage, sizeof(unsigned char) * image->width * image->height))
+    CUDA_CHECK_RETURN(cudaMalloc(&d_sobelYImage, sizeof(unsigned char) * image->width * image->height))
+
+    linearFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, d_sobelXImage, image->width, image->height, totalPixels, d_sobelX, 3, 3);
+    linearFilter<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, d_sobelYImage, image->width, image->height, totalPixels, d_sobelY, 3, 3);
+    combineFilters<< < threadsPerBlock, blocksPerGrid, 0>> > (d_sobelXImage, d_sobelYImage, output->image, totalPixels);
+    CUDA_CHECK_RETURN(cudaFree(d_sobelXImage))
+    CUDA_CHECK_RETURN(cudaFree(d_sobelYImage))
 
 }
 
@@ -351,6 +400,11 @@ void setupRandomness(Image *image) {
     setup_kernel<< < threadsPerBlock, blocksPerGrid>> > (d_states);
 }
 
+void cleanupRandomness() {
+    CUDA_CHECK_RETURN(cudaFree(d_states));
+
+}
+
 void saltAndPepperNoise(Image *image, Image *output, int level) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
@@ -362,7 +416,7 @@ void saltAndPepperNoise(Image *image, Image *output, int level) {
     generateSaltAndPepper<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_states, level);
 }
 
-__global__ void imageQuantizationKernel(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, int *levels, int numLevels) {
+__global__ void imageQuantizationKernel(unsigned char *image, unsigned char *output, int width, int totalPixels, int *levels, int numLevels) {
 
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
