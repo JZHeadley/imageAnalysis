@@ -1,0 +1,34 @@
+{
+  "image_folder": "/home/jzheadley/projects/classes/cmsc630/project1/Cancerous cell smears",
+  // regex pattern of types to match.  For example 'cyl|inter' will process all files starting with cyl or inter
+  "input_image_filter": "",
+  "saveIntermediateImages": true,
+  "saveFinalImages": true,
+  "calc_MSQE": false,
+  "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
+  // red, blue, green, or grey
+  "extract_channel": "grey",
+  "operations": [
+    {
+      "type": "compass-filter"
+    },
+    {
+      "type": "dilation",
+      "structuring-element": {
+        "width": 3,
+        "height": 3,
+        "values": [
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          1,
+          1
+        ]
+      }
+    }
+  ]
+}

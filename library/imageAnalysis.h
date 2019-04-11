@@ -79,6 +79,9 @@ void setupEdgeDetection();
 
 void cleanupRandomness();
 
+void imageDilation(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight);
+
+
 /**
  *
  * @param rgb the image to extract a color from

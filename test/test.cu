@@ -6,7 +6,9 @@
 #include <sys/ioctl.h>
 #include <math.h>
 #include <string.h>
-# include <assert.h>
+#include <assert.h>
+
+#include <malloc.h>
 
 #include <vector>
 #include <iostream>
@@ -113,70 +115,6 @@ vector <string> getFileNames(string input_image_folder, regex filter) {
 
 }
 
-/*
- * The following few functions are related to drawing a histogram and I didn't write them myself.
- * I mentioned it to a friend and he wrote them for the fun of it.  They shouldn't make it into whatever I turn in and are not required functions so I figure its fine for testing things out.
- */
-int findMax(int *arr, int len) {
-    int m = -1;
-    for (int i = 0; i < len; i++) {
-        if (arr[i] > m) {
-            m = arr[i];
-        }
-    }
-    return m;
-}
-
-int getTerminalWidth() {
-    struct winsize w;
-    ioctl(0, TIOCGWINSZ, &w);
-    return w.ws_col;
-}
-
-void padWithZeroes(char *str, int num, int numDigits) {
-    int i = 0;
-    if (num == 0) {
-        for (int i = 0; i < numDigits; i++) {
-            str[i] = '0';
-        }
-    } else {
-        while (num * pow(10, i) < pow(10, numDigits - 1)) {
-            str[i] = '0';
-            i++;
-        }
-        sprintf(str + i, "%d", num);
-    }
-}
-
-void drawHistogram(int *arr, int len) {
-    int max = findMax(arr, len);
-    int numDigits = 0;
-    int width = getTerminalWidth() - 5;
-    int dw = max / width;
-    while (pow(10, numDigits) < len) {
-        numDigits++;
-    }
-    width = getTerminalWidth() - (numDigits + 2);
-    dw = max / width;
-    printf("%d, %d, %d\n", max, width, dw);
-    for (int i = 0; i < len; i++) {
-        char string[numDigits + 2];
-        padWithZeroes(string, i, numDigits);
-        printf("\n");
-        printf("%s|", string);
-        for (int j = 0; j < width - numDigits + 2; j++) {
-            if (arr[i] > dw * j) {
-                printf("#");
-            } else {
-                break;
-            }
-        }
-    }
-    printf("\n");
-}
-// end not my work
-
-
 void saveImage(string output_image_folder, Image *d_image, Image *h_image, Mat *outputMat, string type, string fileName) {
     copyDeviceImageToHost(d_image, h_image);
     convertImageToMat(h_image, outputMat);
@@ -229,6 +167,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalSaltAndPepperNoiseTime = 0,
             totalHistEqualizationTime = 0,
             totalCompassFilterTime = 0,
+            totalDilationTime = 0,
+            totalErosionTime = 0,
             totalQuantizationTime = 0,
             totalLinearFilterTime = 0,
             totalSobelFilterTime = 0,
@@ -442,6 +382,21 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventSynchronize(operationStop);
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalCompassFilterTime += milliseconds;
+                } else if (type == "dilation") {
+                    Json::Value structuringElementJson = operations[i]["structuring-element"];
+                    k_width = structuringElementJson["width"].asInt();
+                    k_height = structuringElementJson["height"].asInt();
+                    int *structuringElement = (int *) malloc(sizeof(int) * k_width * k_height);
+                    readInKernel(structuringElementJson, structuringElement, k_width * k_height);
+                    cudaEventRecord(operationStart);
+                    imageDilation(d_image, d_tempImage, structuringElement, k_width, k_height);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalDilationTime += milliseconds;
+                    free(structuringElement);
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -491,17 +446,15 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     } else {
         printf("Total time spent performing image quantization: %0.4f ms average of: %0.4f ms per image\n", totalQuantizationTime, totalQuantizationTime / numImages);
     }
-    printf("Total time spent linear filtering image: %0.4f ms average of: %0.4f ms per image\n", totalLinearFilterTime, totalLinearFilterTime / numImages);
-    printf("Total time spent average filtering image: %0.4f ms average of: %0.4f ms per image\n", totalAverageFilterTime, totalAverageFilterTime / numImages);
-    printf("Total time spent median filtering image: %0.4f ms average of: %0.4f ms per image\n", totalMedianFilterTime, totalMedianFilterTime / numImages);
-    printf("Total time spent Sobel filtering image: %0.4f ms average of: %0.4f ms per image\n", totalSobelFilterTime, totalSobelFilterTime / numImages);
-    printf("Total time spent Compass filtering image: %0.4f ms average of: %0.4f ms per image\n", totalCompassFilterTime, totalCompassFilterTime / numImages);
-    if (CALC_AVG_HIST) {
-        for (int i = 0; i < 256; i++) {
-            totalHist[i] = totalHist[i] / numImages;
-        }
-        drawHistogram(totalHist, 256);
-    }
+    printf("Total time spent linear filtering images: %0.4f ms average of: %0.4f ms per image\n", totalLinearFilterTime, totalLinearFilterTime / numImages);
+    printf("Total time spent average filtering images: %0.4f ms average of: %0.4f ms per image\n", totalAverageFilterTime, totalAverageFilterTime / numImages);
+    printf("Total time spent median filtering images: %0.4f ms average of: %0.4f ms per image\n", totalMedianFilterTime, totalMedianFilterTime / numImages);
+
+    printf("Total time spent Sobel filtering images: %0.4f ms average of: %0.4f ms per image\n", totalSobelFilterTime, totalSobelFilterTime / numImages);
+    printf("Total time spent Compass filtering images: %0.4f ms average of: %0.4f ms per image\n", totalCompassFilterTime, totalCompassFilterTime / numImages);
+
+    printf("Total time spent dilating images: %0.4f ms average of: %0.4f ms per image\n", totalDilationTime, totalDilationTime / numImages);
+    printf("Total time spent eroding images: %0.4f ms average of: %0.4f ms per image\n", totalErosionTime, totalErosionTime / numImages);
 
 }
 

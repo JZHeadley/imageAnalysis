@@ -166,6 +166,48 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
 
 }
 
+__global__ void dilateImage(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *structuringElement, int kWidth, int kHeight) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if ((tid < totalPixels)) {
+        int k = 0;
+        int aboveBelow = (kHeight - 1) / 2;
+        int sideToSide = (kWidth - 1) / 2;
+        if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
+            output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
+        } else if (image[tid] > 40) { //TODO: need to actually pass in a binary image so I'm not thresholding here because I definitely shouldn't be doing this...
+            for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
+                for (int j = column - sideToSide; j <= column + sideToSide; j++) {
+                    output[i * width + j] = (unsigned char) (structuringElement[k] ? 255 : 0);
+                    k++;
+                }
+            }
+        } else {
+            output[tid] = image[tid];
+        }
+
+    }
+    return;
+}
+
+void imageDilation(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight) {
+    int totalPixels = image->width * image->height;
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
+    float *d_structuringElement;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_structuringElement, sizeof(float) * kWidth * kHeight))
+    CUDA_CHECK_RETURN(cudaMemcpy(d_structuringElement, structuringElement, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice))
+
+    dilateImage<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_structuringElement, kWidth, kHeight);
+
+    CUDA_CHECK_RETURN(cudaFree(d_structuringElement));
+    return;
+}
+
 __global__ void averageFilter(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *kernel, int kWidth, int kHeight) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
@@ -327,7 +369,6 @@ __global__ void compassFilterKern(unsigned char *image, unsigned char *output, i
     }
     return;
 }
-
 
 
 void compassFilter(Image *image, Image *output) {
