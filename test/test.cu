@@ -174,6 +174,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalQuantizationTime = 0,
             totalLinearFilterTime = 0,
             totalSobelFilterTime = 0,
+            totalOtsuThreshTime = 0,
             totalAverageFilterTime = 0,
             totalMedianFilterTime = 0;
     float totalMSQE = 0;
@@ -423,6 +424,15 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventSynchronize(operationStop);
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalThresholdTime += milliseconds;
+                } else if (type == "otsu-thresh") {
+                    cudaEventRecord(operationStart);
+                    otsuThresholdImage(d_image, d_tempImage);
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalOtsuThreshTime += milliseconds;
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -483,6 +493,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
     printf("Total time spent dilating images: %0.4f ms average of: %0.4f ms per image\n", totalDilationTime, totalDilationTime / numImages);
     printf("Total time spent eroding images: %0.4f ms average of: %0.4f ms per image\n", totalErosionTime, totalErosionTime / numImages);
+
+    printf("Total time spent Otsu thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalOtsuThreshTime, totalOtsuThreshTime / numImages);
 
 }
 

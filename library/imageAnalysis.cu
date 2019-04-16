@@ -88,6 +88,42 @@ void extractSingleColorChannel(RGBImage *rgb, Image *out, int color) {
     }
 }
 
+// this method of calculating mean and variance with thrust came from here https://stackoverflow.com/a/41862431
+// I tried to write a summation reduction myself (see the function above) and something just wouldn't work so I just decided to use this
+struct varianceshifteop : std::unary_function<float, float> {
+    varianceshifteop(float m) : mean(m) { /* no-op */ }
+
+    const float mean;
+
+    __device__ float operator()(float data) const {
+        return ::pow(data - mean, 2.0f);
+    }
+};
+
+void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev) {
+    int totalPixels = image->width * image->height;
+//    printf("%i %i %i %i %i\n", image->width, image->height, totalPixels, threadsPerBlock, blocksPerGrid);
+    thrust::device_ptr<unsigned char> dp = thrust::device_pointer_cast(image->image);
+    thrust::device_vector<unsigned char> thrust_image_d(dp, dp + totalPixels);
+    int sum = thrust::reduce(
+            thrust_image_d.cbegin(),
+            thrust_image_d.cend(),
+            0.0f,
+            thrust::plus<float>());
+    float meanCalc = sum / (float) totalPixels;
+
+    float variance = thrust::transform_reduce(
+            thrust_image_d.cbegin(),
+            thrust_image_d.cend(),
+            varianceshifteop(meanCalc),
+            0.0f,
+            thrust::plus<float>()) / (thrust_image_d.size() - 1);
+    float stdv = sqrt(variance);
+//    printf("%i is the sum of the pixels and %f is the mean variance is %f and stdDev is %f  \n", sum, meanCalc, variance, stdv);
+    *mean = meanCalc;
+    *stdDev = stdv;
+}
+
 __global__ void calcHistogram(unsigned char *data, int width, int numPixels, int *histogram) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / width;
@@ -213,6 +249,55 @@ void thresholdImage(Image *image, Image *output, int threshold) {
     output->height = image->height;
     CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
     thresholding<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, totalPixels, threshold);
+}
+
+/**
+ * adapted from code and concepts found here...
+ * http://www.labbookpages.co.uk/software/imgProc/otsuThreshold.html
+ */
+void otsuThresholdImage(Image *image, Image *output) {
+    int totalPixels = image->width * image->height;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
+
+    int h_histogram[256];
+    int *d_histogram;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_histogram, sizeof(int) * 256))
+    calculateHistogram(image, h_histogram, d_histogram);
+
+    thrust::device_ptr<unsigned char> dp = thrust::device_pointer_cast(image->image);
+    thrust::device_vector<unsigned char> thrust_image_d(dp, dp + totalPixels);
+    int sum = thrust::reduce(
+            thrust_image_d.cbegin(),
+            thrust_image_d.cend(),
+            0.0f,
+            thrust::plus<float>());
+    float varMax = 0;
+    int threshold = 0;
+    int backgroundSum = 0;
+    int numForegroundPixels = 0;
+    int numBackgroundPixels = 0;
+    for (int i = 0; i < 256; i++) {
+        numBackgroundPixels += h_histogram[i];
+        if (numBackgroundPixels == 0)
+            continue;
+        numForegroundPixels = totalPixels - numBackgroundPixels;
+        if (numForegroundPixels == 0)
+            continue;
+
+        backgroundSum += i * h_histogram[i];
+        float backgroundMean = backgroundSum / numBackgroundPixels;
+        float foregroundMean = (sum - backgroundSum) / numForegroundPixels;
+        float betweenClassVariance = (float) numBackgroundPixels * (float) numForegroundPixels * (backgroundMean - foregroundMean) * (backgroundMean - foregroundMean);
+
+        if (betweenClassVariance > varMax) {
+            varMax = betweenClassVariance;
+            threshold = i;
+        }
+    }
+//    printf("Otsu threshold is %i\n", threshold);
+    thresholdImage(image, output, threshold);
 }
 
 void imageDilation(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight) {
@@ -639,42 +724,6 @@ void imageQuantization(Image *image, Image *output, int *levels, int numLevels) 
     // kernel call here
     imageQuantizationKernel<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, totalPixels, d_levels, numLevels);
     CUDA_CHECK_RETURN(cudaFree(d_levels))
-}
-
-// this method of calculating mean and variance with thrust came from here https://stackoverflow.com/a/41862431
-// I tried to write a summation reduction myself (see the function above) and something just wouldn't work so I just decided to use this
-struct varianceshifteop : std::unary_function<float, float> {
-    varianceshifteop(float m) : mean(m) { /* no-op */ }
-
-    const float mean;
-
-    __device__ float operator()(float data) const {
-        return ::pow(data - mean, 2.0f);
-    }
-};
-
-void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev) {
-    int totalPixels = image->width * image->height;
-//    printf("%i %i %i %i %i\n", image->width, image->height, totalPixels, threadsPerBlock, blocksPerGrid);
-    thrust::device_ptr<unsigned char> dp = thrust::device_pointer_cast(image->image);
-    thrust::device_vector<unsigned char> thrust_image_d(dp, dp + totalPixels);
-    int sum = thrust::reduce(
-            thrust_image_d.cbegin(),
-            thrust_image_d.cend(),
-            0.0f,
-            thrust::plus<float>());
-    float meanCalc = sum / (float) totalPixels;
-
-    float variance = thrust::transform_reduce(
-            thrust_image_d.cbegin(),
-            thrust_image_d.cend(),
-            varianceshifteop(meanCalc),
-            0.0f,
-            thrust::plus<float>()) / (thrust_image_d.size() - 1);
-    float stdv = sqrt(variance);
-//    printf("%i is the sum of the pixels and %f is the mean variance is %f and stdDev is %f  \n", sum, meanCalc, variance, stdv);
-    *mean = meanCalc;
-    *stdDev = stdv;
 }
 
 

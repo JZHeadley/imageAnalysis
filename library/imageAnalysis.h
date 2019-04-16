@@ -81,11 +81,11 @@ void cleanupRandomness();
 
 void imageDilation(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight);
 
-
 void imageErosion(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight);
 
-
 void thresholdImage(Image *image, Image *output, int threshold);
+
+void otsuThresholdImage(Image *image, Image *output);
 
 /**
  *
