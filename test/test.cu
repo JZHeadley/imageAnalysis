@@ -21,7 +21,7 @@
 
 using namespace std;
 using namespace cv;
-#define LOGLEVEL 3
+#define LOGLEVEL 4
 //#define DEBUG_GRAYSCALE true
 #define DEBUG_GRAYSCALE false
 //#define DEBUG_HIST true
@@ -181,7 +181,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     float totalMSQE = 0;
     float numImages = files.size();
     bool randomnessSet = false;
-    bool sobelSet = false;
+    bool edgeDetectionSet = false;
     cudaEventRecord(batchStart);
 
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
@@ -190,6 +190,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             printf("Working on image %s\n", curFilePath.c_str());
         try {
             mat = imread(input_image_folder + "/" + curFilePath, CV_LOAD_IMAGE_COLOR);
+            if (mat.empty()) {
+                continue;
+            }
             convertMatToRGBImage(mat, h_rgbImage);
             // convert image to a single color spectrum
             if (extract_channel == "grey") {
@@ -360,9 +363,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalQuantizationTime += milliseconds;
                 } else if (type == "sobel-filter") {
-                    if (!sobelSet) {
+                    if (!edgeDetectionSet) {
                         setupEdgeDetection();
-                        sobelSet = true;
+                        edgeDetectionSet = true;
                     }
                     cudaEventRecord(operationStart);
                     sobelFilter(d_image, d_tempImage);
@@ -373,9 +376,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalSobelFilterTime += milliseconds;
                 } else if (type == "compass-filter") {
-                    if (!sobelSet) {
+                    if (!edgeDetectionSet) {
                         setupEdgeDetection();
-                        sobelSet = true;
+                        edgeDetectionSet = true;
                     }
                     cudaEventRecord(operationStart);
                     compassFilter(d_image, d_tempImage);
@@ -436,12 +439,12 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     totalOtsuThreshTime += milliseconds;
                 } else if (type == "kMeans-thresh") {
                     cudaEventRecord(operationStart);
-                    int k = operations[i]["k"].asInt();
-                    if (k != NULL) {
-                        kMeansThresholding(d_image, d_tempImage, k);
-                    } else {
+//                    int k = operations[i]["k"].asInt();
+//                    if (k != NULL) {
+//                        kMeansThresholding(d_image, d_tempImage, k);
+//                    } else {
                         kMeansThresholding(d_image, d_tempImage);
-                    }
+//                    }
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
                     cudaEventRecord(operationStop);
@@ -476,7 +479,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             continue;
         }
     }
-    if (sobelSet) {
+    if (edgeDetectionSet) {
         cleanupEdgeDetection();
     }
     if (randomnessSet) {

@@ -11,6 +11,9 @@
   "operations": [
     {
       "type": "compass-filter"
+    },
+    {
+      "type": "otsu-thresh"
     }
   ]
 }
