@@ -10,28 +10,7 @@
   "extract_channel": "grey",
   "operations": [
     {
-      "type": "otsu-thresh"
-    },
-    {
-      "type": "compass-filter"
-    },
-    {
-      "type": "dilation",
-      "structuring-element": {
-        "width": 3,
-        "height": 3,
-        "values": [
-          0,
-          0,
-          1,
-          0,
-          1,
-          1,
-          0,
-          1,
-          1
-        ]
-      }
+      "type": "kMeans-thresh"
     }
   ]
 }

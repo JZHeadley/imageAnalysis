@@ -175,6 +175,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalLinearFilterTime = 0,
             totalSobelFilterTime = 0,
             totalOtsuThreshTime = 0,
+            totalKMeansThreshTime = 0,
             totalAverageFilterTime = 0,
             totalMedianFilterTime = 0;
     float totalMSQE = 0;
@@ -433,6 +434,20 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventSynchronize(operationStop);
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalOtsuThreshTime += milliseconds;
+                } else if (type == "kMeans-thresh") {
+                    cudaEventRecord(operationStart);
+                    int k = operations[i]["k"].asInt();
+                    if (k != NULL) {
+                        kMeansThresholding(d_image, d_tempImage, k);
+                    } else {
+                        kMeansThresholding(d_image, d_tempImage);
+                    }
+                    CUDA_CHECK_RETURN(cudaFree(d_image->image));
+                    d_image->image = d_tempImage->image;
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalKMeansThreshTime += milliseconds;
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -489,12 +504,13 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     printf("Total time spent Sobel filtering images: %0.4f ms average of: %0.4f ms per image\n", totalSobelFilterTime, totalSobelFilterTime / numImages);
     printf("Total time spent Compass filtering images: %0.4f ms average of: %0.4f ms per image\n", totalCompassFilterTime, totalCompassFilterTime / numImages);
 
-    printf("Total time spent thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalThresholdTime, totalThresholdTime / numImages);
 
     printf("Total time spent dilating images: %0.4f ms average of: %0.4f ms per image\n", totalDilationTime, totalDilationTime / numImages);
     printf("Total time spent eroding images: %0.4f ms average of: %0.4f ms per image\n", totalErosionTime, totalErosionTime / numImages);
 
+    printf("Total time spent Basic thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalThresholdTime, totalThresholdTime / numImages);
     printf("Total time spent Otsu thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalOtsuThreshTime, totalOtsuThreshTime / numImages);
+    printf("Total time spent k Means thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalKMeansThreshTime, totalKMeansThreshTime / numImages);
 
 }
 

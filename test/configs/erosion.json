@@ -10,11 +10,11 @@
   "extract_channel": "grey",
   "operations": [
     {
-      "type": "compass-filter"
+      "type": "kMeans-thresh",
+      "threshold": 40
     },
     {
-      "type": "threshold",
-      "threshold": 40
+      "type": "compass-filter"
     },
     {
       "type": "erosion",

@@ -87,6 +87,10 @@ void thresholdImage(Image *image, Image *output, int threshold);
 
 void otsuThresholdImage(Image *image, Image *output);
 
+void kMeansThresholding(Image *image, Image *output, int k);
+
+void kMeansThresholding(Image *image, Image *output);
+
 /**
  *
  * @param rgb the image to extract a color from

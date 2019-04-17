@@ -36,6 +36,9 @@ __global__ void convertRGBToGrayscaleAverage(unsigned char *image, int width, in
     return;
 }
 
+int random(int min, int max) {
+    return min + rand() / (RAND_MAX / (max - min + 1) + 1);
+}
 
 void convertRGBToGrayscale(RGBImage *d_rgb, Image *d_gray, int method) {
     /*
@@ -139,9 +142,6 @@ __global__ void calcHistogram(unsigned char *data, int width, int numPixels, int
 void calculateHistogram(Image *image, int *h_histogram, int *d_histogram) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
-//    int operationsPerThread = 10;
-//    int numOperations = totalPixels / operationsPerThread;
-//    int blocksPerGrid = (numOperations + threadsPerBlock - 1) / threadsPerBlock;
     int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
     CUDA_CHECK_RETURN(cudaMalloc(&d_histogram, (int) sizeof(int) * 256));
     CUDA_CHECK_RETURN(cudaMemset(d_histogram, 0, 256 * sizeof(int)));
@@ -254,6 +254,11 @@ void thresholdImage(Image *image, Image *output, int threshold) {
 /**
  * adapted from code and concepts found here...
  * http://www.labbookpages.co.uk/software/imgProc/otsuThreshold.html
+ * I'm not trying to plagiarize ... please don't try and get me for it...
+ * I used large pieces of their code because I found no better way to do this in a speedy way
+ * I tried to come up with a much better cuda implementation but couldn't come up with one
+ * that wouldn't take a week to implement and debug so I fell back to calculating sum with thrush
+ * and using their general way of finding the threshold because its just so efficient
  */
 void otsuThresholdImage(Image *image, Image *output) {
     int totalPixels = image->width * image->height;
@@ -296,8 +301,68 @@ void otsuThresholdImage(Image *image, Image *output) {
             threshold = i;
         }
     }
-//    printf("Otsu threshold is %i\n", threshold);
     thresholdImage(image, output, threshold);
+}
+
+bool centroidsHaveChanged(unsigned char *centroids, int *count, int k) {
+    bool changed = false;
+    for (int i = 0; i < k; i++) {
+        if ((centroids[i] ^ centroids[i + k]) != 0) {
+            centroids[i] = centroids[i + k];
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+__global__ void kMeans(unsigned char *image, unsigned char *labels, unsigned char *centroids, int totalPixels, int k) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    if (tid < numPixels) {
+        int bestDist = INT_MAX;
+        unsigned char bestCentroid = 0;
+        for (int i = 1; i < k; ++i) {
+            int dist = abs(centroids[i] - image[tid]);
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestCentroid = i;
+            }
+        }
+        labels[tid] = bestCentroid;
+    }
+}
+
+void kMeansThresholding(Image *image, Image *output, int k) {
+    int totalPixels = image->width * image->height;
+    output->width = image->width;
+    output->height = image->height;
+    CUDA_CHECK_RETURN(cudaMalloc(&(output->image), sizeof(unsigned char) * image->width * image->height))
+    // going to use 1 array to represent old and new values of the centroid so I don't have to flip back and forth between variables somehow
+    unsigned char *h_centroids = (unsigned char *) malloc(sizeof(unsigned char) * k * 2);
+    for (int i = 0; i < k; i++) {
+        h_centroids[i] = random(0, 256);
+    }
+    unsigned char *d_centroids;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_centroids, sizeof(unsigned char) * k * 2))
+    unsigned char *h_labels = (unsigned char *) malloc(sizeof(unsigned char) * totalPixels);
+    unsigned char *d_labels;
+    CUDA_CHECK_RETURN(cudaMalloc(&d_labels, sizeof(unsigned char) * totalPixels))
+
+    int threadsPerBlock = 512;
+    int blocksPerGrid = (totalPixels + threadsPerBlock - 1) / threadsPerBlock;
+    int count = 0;
+    do {
+        CUDA_CHECK_RETURN(cudaMemcpy(d_centroids, h_centroids, sizeof(unsigned char) * k * 2, cudaMemcpyHostToDevice));
+        kMeans<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, d_labels, d_centroids, totalPixels, k);
+        CUDA_CHECK_RETURN(cudaMemcpy(h_labels, d_labels, sizeof(unsigned char) * totalPixels, cudaMemcpyDeviceToHost));
+
+        CUDA_CHECK_RETURN(cudaMemcpy(h_centroids, d_centroids, sizeof(unsigned char) * k * 2, cudaMemcpyDeviceToHost));
+    } while (centroidsHaveChanged(h_centroids, &count, k));
+    CUDA_CHECK_RETURN(cudaFree(d_centroids))
+
+}
+
+void kMeansThresholding(Image *image, Image *output) {
+    kMeansThresholding(image, output, 2);
 }
 
 void imageDilation(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight) {
