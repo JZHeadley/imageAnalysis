@@ -307,8 +307,9 @@ void otsuThresholdImage(Image *image, Image *output) {
 bool centroidsHaveChanged(unsigned char *centroids, int *count, int k) {
     bool changed = false;
     for (int i = 0; i < k; i++) {
+        printf("centroid %i should change %i %i %i\n", i, centroids[i] ^ centroids[i + k], centroids[i], centroids[i + k]);
         if ((centroids[i] ^ centroids[i + k]) != 0) {
-            printf("Centroids changed on iteration %i from %i to %i\n", *count, centroids[i], centroids[i] + k);
+            printf("Centroids changed on iteration %i from %i to %i\n", *count, centroids[i], centroids[i + k]);
             centroids[i] = centroids[i + k];
             changed = true;
 
@@ -330,24 +331,36 @@ __global__ void kMeans(unsigned char *image, unsigned char *labels, unsigned cha
     }
 }
 
+__global__ void awfulClassAverage(unsigned_char *image, unsigned char *labels, int k, int totalPixels, float *sumsPerClass, int *countPerClass) {
+
+}
 
 void calculateCentroidPositions(unsigned char *h_centroids, unsigned char *d_labels, unsigned char *d_image, int k, int totalPixels) {
-    thrust::device_ptr<unsigned char> dp_image = thrust::device_pointer_cast(d_image);
+    unsigned char *tempImage;
+    CUDA_CHECK_RETURN(cudaMalloc(&tempImage, sizeof(unsigned char) * totalPixels))
+    CUDA_CHECK_RETURN(cudaMemcpy(tempImage, d_image, totalPixels, cudaMemcpyDeviceToDevice))
+    thrust::device_ptr<unsigned char> dp_image = thrust::device_pointer_cast(tempImage);
     thrust::device_ptr<unsigned char> dp_labels = thrust::device_pointer_cast(d_labels);
     thrust::sort_by_key(dp_labels, dp_labels + totalPixels, dp_image);
-//    unsigned char *keysOut;
-//    CUDA_CHECK_RETURN(cudaMalloc(&keysOut, sizeof(unsigned char) * totalPixels))
-//    unsigned char *valsOut;
-//    CUDA_CHECK_RETURN(cudaMalloc(&valsOut, sizeof(unsigned char) * totalPixels))
+
 
     int numClass0 = thrust::count(dp_labels, dp_labels + totalPixels, 0);
     int sum = thrust::reduce(dp_image, dp_image + numClass0);
+//    int sum = 0;
+    printf("centroid 0 is moving from %i to %i\n", h_centroids[0], floor(sum / (float) numClass0));
     h_centroids[k] = (unsigned char) floor(sum / (float) numClass0);
-
-    int sumTotal= thrust::reduce(dp_image, dp_image + totalPixels);
-    h_centroids[k + 1] = (unsigned char) floor((sumTotal - sum) / (totalPixels - numClass0));
-//    CUDA_CHECK_RETURN(cudaFree(keysOut))
+    int sumTotal = thrust::reduce(dp_image, dp_image + totalPixels);
+    printf("centroid 1 is moving from %i to %i\n", h_centroids[1], floor((sumTotal - sum) / (float) (totalPixels - numClass0)));
+    printf("had %i class 0 instances with total sum %i and %i class 1 instances with total sum of %i\n", numClass0, sum, (totalPixels - numClass0), sumTotal - sum);
+    h_centroids[k + 1] = (unsigned char) floor((sumTotal - sum) / (float) (totalPixels - numClass0));
+    CUDA_CHECK_RETURN(cudaFree(tempImage))
 //    CUDA_CHECK_RETURN(cudaFree(valsOut))
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < k; j++) {
+            printf("%i ", h_centroids[j + i * 2]);
+        }
+        printf("\n");
+    }
 }
 
 __global__ void applyLabels(unsigned char *image, unsigned char *labels, int totalPixels) {
@@ -372,6 +385,7 @@ void kMeansThresholding(Image *image, Image *output) {
     unsigned char *h_centroids = (unsigned char *) malloc(sizeof(unsigned char) * k * 2);
     for (int i = 0; i < k; i++) {
         h_centroids[i] = random(0, 256);
+        printf("centroid %i starting off at %i\n", i, h_centroids[i]);
     }
     unsigned char *d_centroids;
     CUDA_CHECK_RETURN(cudaMalloc(&d_centroids, sizeof(unsigned char) * k * 2))
