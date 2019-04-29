@@ -10,8 +10,7 @@
   "extract_channel": "grey",
   "operations": [
     {
-      "type": "kMeans-thresh",
-      "threshold": 40
+      "type": "otsu-thresh"
     },
     {
       "type": "compass-filter"

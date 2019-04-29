@@ -198,34 +198,8 @@ void equalizeImageWithHist(Image *image, Image *d_equalizedImage, int *h_mapping
     CUDA_CHECK_RETURN(cudaMalloc(&(d_equalizedImage->image), sizeof(unsigned char) * image->width * image->height));
     equalizeImage<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, image->width, totalPixels, d_mappings, d_equalizedImage->image);
     CUDA_CHECK_RETURN(cudaFree(d_mappings));
-
-
 }
 
-__global__ void dilateImage(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *structuringElement, int kWidth, int kHeight) {
-    int tid = blockDim.x * blockIdx.x + threadIdx.x;
-    int row = tid / width;
-    int column = tid - ((tid / width) * width);
-    if ((tid < totalPixels)) {
-        int k = 0;
-        int aboveBelow = (kHeight - 1) / 2;
-        int sideToSide = (kWidth - 1) / 2;
-        if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
-            output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
-        } else if (image[tid] > 0) {
-            for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
-                for (int j = column - sideToSide; j <= column + sideToSide; j++) {
-                    output[i * width + j] = (unsigned char) (structuringElement[k] ? 255 : 0);
-                    k++;
-                }
-            }
-        } else {
-            output[tid] = image[tid];
-        }
-
-    }
-    return;
-}
 
 /**
  * Returns an image with all pixels above the threshold as white and everything else as black
@@ -257,7 +231,7 @@ void thresholdImage(Image *image, Image *output, int threshold) {
  * I'm not trying to plagiarize ... please don't try and get me for it...
  * I used large pieces of their code because I found no better way to do this in a speedy way
  * I tried to come up with a much better cuda implementation but couldn't come up with one
- * that wouldn't take a week to implement and debug so I fell back to calculating sum with thrush
+ * that wouldn't take a week to implement and debug so I fell back to calculating sum with thrust
  * and using their general way of finding the threshold because its just so efficient
  */
 void otsuThresholdImage(Image *image, Image *output) {
@@ -323,10 +297,8 @@ __global__ void kMeans(unsigned char *image, unsigned char *labels, unsigned cha
     if (tid < totalPixels) {
         if (abs(centroids[0] - image[tid]) > abs(centroids[1] - image[tid])) {
             labels[tid] = 0;
-//            printf("0\n");
         } else {
             labels[tid] = 1;
-//            printf("1\n");
         }
     }
 }
@@ -406,6 +378,31 @@ void kMeansThresholding(Image *image, Image *output) {
     CUDA_CHECK_RETURN(cudaFree(d_centroids))
 }
 
+__global__ void dilateImage(unsigned char *image, unsigned char *output, int width, int height, int totalPixels, float *structuringElement, int kWidth, int kHeight) {
+    int tid = blockDim.x * blockIdx.x + threadIdx.x;
+    int row = tid / width;
+    int column = tid - ((tid / width) * width);
+    if ((tid < totalPixels)) {
+        int k = 0;
+        int aboveBelow = (kHeight - 1) / 2;
+        int sideToSide = (kWidth - 1) / 2;
+        if (row < aboveBelow || row > (height - aboveBelow) || column < sideToSide || column > (width - sideToSide)) {
+            output[row * width + column] = 0; // image[row * width + column]; // handles when our filter would go outside the edge of the image
+        } else if (image[tid] > 0) {
+            for (int i = row - aboveBelow; i <= row + aboveBelow; i++) {
+                for (int j = column - sideToSide; j <= column + sideToSide; j++) {
+                    output[i * width + j] = (unsigned char) (structuringElement[k] ? 255 : 0);
+                    k++;
+                }
+            }
+        } else {
+            output[tid] = image[tid];
+        }
+
+    }
+    return;
+}
+
 void imageDilation(Image *image, Image *output, int *structuringElement, int kWidth, int kHeight) {
     int totalPixels = image->width * image->height;
     int threadsPerBlock = 512;
@@ -417,7 +414,7 @@ void imageDilation(Image *image, Image *output, int *structuringElement, int kWi
     CUDA_CHECK_RETURN(cudaMalloc(&d_structuringElement, sizeof(float) * kWidth * kHeight))
     CUDA_CHECK_RETURN(cudaMemcpy(d_structuringElement, structuringElement, sizeof(float) * kWidth * kHeight, cudaMemcpyHostToDevice))
     dilateImage<< < threadsPerBlock, blocksPerGrid, 0>> > (image->image, output->image, image->width, image->height, totalPixels, d_structuringElement, kWidth, kHeight);
-    CUDA_CHECK_RETURN(cudaFree(d_structuringElement))
+//    CUDA_CHECK_RETURN(cudaFree(d_structuringElement))
     return;
 }
 

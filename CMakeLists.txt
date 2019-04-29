@@ -8,16 +8,9 @@ project(imageAnalysis CXX CUDA)
 hunter_add_package(jsoncpp)
 #hunter_add_package(OpenCV)
 
-#hunter_add_package(Boost COMPONENTS filesystem )
-#find_package(Boost COMPONENTS filesystem REQUIRED)
-
 find_package(OpenCV REQUIRED core imgproc highgui)
 find_package(OpenMP)
 find_package(jsoncpp CONFIG REQUIRED)
-
-#set(CMAKE_CXX_STANDARD 17)
-#set(CMAKE_CXX_STANDARD_REQUIRED ON)
-#set(CMAKE_CXX_EXTENSIONS OFF)
 
 if (OPENMP_FOUND)
     message("Found OpenMP!")
@@ -31,12 +24,14 @@ endif ()
 
 
 set(CMAKE_C_STANDARD 11)
-include_directories("${PROJECT_SOURCE_DIR}/library")
+include_directories("${PROJECT_SOURCE_DIR}/imageAnalysisLib")
+include_directories("${PROJECT_SOURCE_DIR}/imageMachineLearningLib")
 
-add_subdirectory(library)
+add_subdirectory(imageAnalysisLib)
+add_subdirectory(imageMachineLearningLib)
 add_subdirectory(test)
 
-target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis ${OpenCV_LIBS} jsoncpp_lib_static)
+target_link_libraries(imageAnalysis_test PRIVATE imageMachineLearning imageAnalysis ${OpenCV_LIBS} jsoncpp_lib_static)
 
 # I don't take you to be an apple guy but just in case...
 if (APPLE)

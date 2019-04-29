@@ -1,5 +1,5 @@
 #include "imageAnalysis.h"
-#include "../library/imageAnalysis.h"
+#include "../imageAnalysisLib/imageAnalysis.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -32,7 +32,6 @@ using namespace cv;
 #define DEBUG_LINFILTER false
 //#define DEBUG_MEDFILTER true
 #define DEBUG_MEDFILTER false
-// I don't write very memory efficient c code and tend to introduce some memory leakage but oh well today isn't the day I figure it out...
 
 #define CALC_AVG_HIST false
 

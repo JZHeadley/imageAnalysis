@@ -10,9 +10,6 @@
   "extract_channel": "grey",
   "operations": [
     {
-      "type": "histogram-equalization"
-    },
-    {
       "type": "sobel-filter"
     }
   ]
