@@ -1,6 +1,6 @@
 #include "imageAnalysis.h"
 #include "../imageAnalysisLib/imageAnalysis.h"
-
+#include "../imageAnalysisLib/imageMachineLearningLib/imageMachineLearning.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/ioctl.h>
@@ -442,7 +442,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 //                    if (k != NULL) {
 //                        kMeansThresholding(d_image, d_tempImage, k);
 //                    } else {
-                        kMeansThresholding(d_image, d_tempImage);
+                    kMeansThresholding(d_image, d_tempImage);
 //                    }
                     CUDA_CHECK_RETURN(cudaFree(d_image->image));
                     d_image->image = d_tempImage->image;
@@ -450,6 +450,17 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventSynchronize(operationStop);
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalKMeansThreshTime += milliseconds;
+                } else if (type == "knn") {
+                    float train[3][5] = {
+                            {1, 2, 1, 2, 0},
+                            {2, 1, 2, 1, 1},
+                            {4, 2, 6, 5, 0},
+                    };
+                    float test[2][5] = {
+                            {3, 11, 3, 4, -1},
+                            {7, 2, 8, 3, -1}
+                    };
+                    knn(3, 2, (float *) train, (float *) test, 5, 1);
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;

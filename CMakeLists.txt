@@ -25,13 +25,11 @@ endif ()
 
 set(CMAKE_C_STANDARD 11)
 include_directories("${PROJECT_SOURCE_DIR}/imageAnalysisLib")
-include_directories("${PROJECT_SOURCE_DIR}/imageMachineLearningLib")
 
 add_subdirectory(imageAnalysisLib)
-add_subdirectory(imageMachineLearningLib)
 add_subdirectory(test)
 
-target_link_libraries(imageAnalysis_test PRIVATE imageMachineLearning imageAnalysis ${OpenCV_LIBS} jsoncpp_lib_static)
+target_link_libraries(imageAnalysis_test PRIVATE imageAnalysis ${OpenCV_LIBS} jsoncpp_lib_static)
 
 # I don't take you to be an apple guy but just in case...
 if (APPLE)

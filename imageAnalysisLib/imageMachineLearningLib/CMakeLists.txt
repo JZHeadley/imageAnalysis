@@ -2,6 +2,7 @@
 add_library(imageMachineLearning
         imageMachineLearning.cu
         imageMachineLearning.h
+        ../imageAnalysis.h
         )
 
 target_compile_features(imageMachineLearning PUBLIC cxx_std_11)
