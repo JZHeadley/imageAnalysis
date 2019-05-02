@@ -131,24 +131,22 @@
 __global__ void computeDistances(int numTrain, int numTest, int numAttributes, float *train, float *test, float *distances) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
     int row = tid / numTrain; // instance1Index
-    int column = tid - ((tid / numTest) * numTest); //instance2Index
+    int column = tid - ((tid / numTrain) * numTrain); //instance2Index
     if ((tid < (numTrain * numTest)/* * numInstances*/)) {
         float sum = 0;
         int instance1 = row * numAttributes;
         int instance2 = column * numAttributes;
         for (int atIdx = 0; atIdx < numAttributes - 1; atIdx++) // numAttributes -1 since we don't want to compare class in the distance because that doesn't make sense
         {
-            sum += ((train[instance1 + atIdx] - test[instance2 + atIdx]) * (train[instance1 + atIdx] - test[instance2 + atIdx]));
+            sum += ((test[instance1 + atIdx] - train[instance2 + atIdx]) * (test[instance1 + atIdx] - train[instance2 + atIdx]));
         }
         distances[row * numTrain + column] = (float) sqrt(sum);
-        distances[column * numTest + row] = distances[row * numTrain + column]; //set the distance for the other half of the pair we just computed
     }
 }
 
 void printMatrix(float *matrix, int numX, int numY) {
-
-    for (int i = 0; i < numX; i++) {
-        for (int j = 0; j < numY; j++) {
+    for (int i = 0; i < numY; i++) {
+        for (int j = 0; j < numX; j++) {
             printf("%f ", matrix[i * numX + j]);
         }
         printf("\n");
@@ -168,7 +166,6 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
 
     int threadsPerBlock = 256;
     int blocksPerGrid = ((numTrain * numTest) + threadsPerBlock - 1) / threadsPerBlock;
-
     cudaMallocHost(&h_predictions, sizeof(int) * numTrain);
 //    cudaMallocHost(&h_train, sizeof(float) * numTrain * numAttributes);
 //    cudaMallocHost(&h_test, sizeof(float) * numTest * numAttributes);
