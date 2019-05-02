@@ -127,6 +127,63 @@
 //        }
 //    }
 //}
+//__global__ void knn(int *predictions, float *distances, float *dataset, int numAttributes, int k) {
+//    __shared__ int indexes[256];
+//    __shared__ float distancesTo[256];
+//    // gridDim.x is numInstances
+//    int bestInstanceId;
+//    float bestDistance = INT_MAX;
+//    int instanceFrom = blockIdx.x * gridDim.x;
+//    int distancePos;
+//    int rowBoundary = instanceFrom + gridDim.x - 1;
+//    if (blockDim.x < gridDim.x) { //If we have more elements than threads we need to do an inital reduction to fit into our shared mem
+//        if (threadIdx.x < blockDim.x) // only want 256 threads to come into this otherwise we will go out of bounds of our shared mem
+//        {
+//            for (int i = threadIdx.x; i < gridDim.x; i += blockDim.x) // will try to make this more coalesced later
+//            {
+//                if (i == blockIdx.x) // don't need to include the diagonal
+//                    continue;
+//
+//                distancePos = instanceFrom + i;
+//                if (distancePos > rowBoundary) { // should take care of the final elements
+//                    break;
+//                }
+//                if (distances[distancePos] < bestDistance) {
+//                    bestDistance = distances[distancePos];
+//                    bestInstanceId = i;
+//                }
+//            }
+//            indexes[threadIdx.x] = bestInstanceId;
+//            distancesTo[threadIdx.x] = bestDistance;
+//        }
+//        __syncthreads();
+//
+//        if (threadIdx.x < blockDim.x / 2) // only need the first half(128) of the threads to work on the 256 length shared mem arrays
+//        {
+//            int s;
+//            // this for should probably have the conditional of (s>>1) > k but if I do that I don't reduce enough sooo...
+//            // we're going with this until I find that error and just upping s back up after this for
+//            for (s = blockDim.x / 2; (s) > k; s >>= 1) {
+//                if (threadIdx.x < s) {
+//                    if (distancesTo[threadIdx.x + s] < distancesTo[threadIdx.x]) {
+//                        distancesTo[threadIdx.x] = distancesTo[threadIdx.x + s];
+//                        indexes[threadIdx.x] = indexes[threadIdx.x + s];
+//                    }
+//                    __syncthreads();
+//                }
+//            }
+//            s *= 2;
+//            __syncthreads();
+//            if (s > k && threadIdx.x == 1) { // we need to reduce it just a little more
+//                // remember to change both the indexes and distancesTo arrays
+////                reduceToK(distancesTo, indexes, k, s);
+//            }
+//            __syncthreads();
+////            if (threadIdx.x == 1)
+////                predictions[blockIdx.x] = vote(distancesTo, indexes, dataset, k, numAttributes);
+//        }
+//    }
+//}
 
 __global__ void computeDistances(int numTrain, int numTest, int numAttributes, float *train, float *test, float *distances) {
     int tid = blockDim.x * blockIdx.x + threadIdx.x;
@@ -153,6 +210,57 @@ void printMatrix(float *matrix, int numX, int numY) {
     }
 }
 
+
+__global__ void knn(int numTrain, int numAttributes, float *distances, int *predictions, float *train, int k) {
+    __shared__ int indexes[256];
+    __shared__ float distancesTo[256];
+    if (numTrain > blockDim.x) { // need an initial reduction so we can fit the best instances into our shared memory to use to vote
+        int instancesPerThread = (numTrain + blockDim.x - 1) / blockDim.x;
+        int bestInstanceId = -1;
+        float bestDistance = INT_MAX;
+        int offset = threadIdx.x * instancesPerThread;
+        for (int i = offset; i < min(blockDim.x, offset + instancesPerThread); i++) {
+
+            if (distances[blockIdx.x * blockDim.x + offset] < bestDistance) {
+                bestDistance = distances[blockIdx.x * blockDim.x + offset];
+                bestInstanceId = offset;
+            }
+        }
+        indexes[threadIdx.x] = bestInstanceId;
+        distancesTo[threadIdx.x] = bestDistance;
+
+    } else { // numTrain <= blockDim.x
+        indexes[threadIdx.x] = threadIdx.x;
+        distancesTo[threadIdx.x] = distances[blockDim.x * blockIdx.x + threadIdx.x];
+    }
+    __syncthreads(); // get all the threads of the block together again after the initial reduction
+/*    if (threadIdx.x < blockDim.x / 2) // only need the first half(128) of the threads to work on the 256 length shared mem arrays
+    {
+        int s;
+        // this for should probably have the conditional of (s>>1) > k but if I do that I don't reduce enough sooo...
+        // we're going with this until I find that error and just upping s back up after this for
+        for (s = blockDim.x / 2; (s) > k; s >>= 1) {
+            if (threadIdx.x < s) {
+                if (distancesTo[threadIdx.x + s] < distancesTo[threadIdx.x]) {
+                    distancesTo[threadIdx.x] = distancesTo[threadIdx.x + s];
+                    indexes[threadIdx.x] = indexes[threadIdx.x + s];
+                }
+                __syncthreads();
+            }
+        }
+        s *= 2;
+        __syncthreads();*/
+
+//        if (s > k && threadIdx.x == 1) { // we need to reduce it just a little more
+//            // remember to change both the indexes and distancesTo arrays
+////                reduceToK(distancesTo, indexes, k, s);
+//        }
+//        __syncthreads();
+////            if (threadIdx.x == 1)
+////                predictions[blockIdx.x] = vote(distancesTo, indexes, dataset, k, numAttributes);
+    }
+}
+
 void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttributes, int k) {
     int NUM_STREAMS = numTest;
     cudaStream_t *streams = (cudaStream_t *) malloc(NUM_STREAMS * sizeof(cudaStream_t));
@@ -164,14 +272,14 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     float *d_train, *d_test, *d_distances;
     int *d_predictions;
 
-    int threadsPerBlock = 256;
+    int threadsPerBlock = min(numTrain * numTest, 256);
     int blocksPerGrid = ((numTrain * numTest) + threadsPerBlock - 1) / threadsPerBlock;
     cudaMallocHost(&h_predictions, sizeof(int) * numTrain);
 //    cudaMallocHost(&h_train, sizeof(float) * numTrain * numAttributes);
 //    cudaMallocHost(&h_test, sizeof(float) * numTest * numAttributes);
     cudaMallocHost(&h_distances, sizeof(float) * numTrain * numTest);
 
-    cudaMallocHost(&d_predictions, sizeof(int) * numTrain);
+    cudaMallocHost(&d_predictions, sizeof(int) * numTest);
     cudaMallocHost(&d_train, sizeof(float) * numTrain * numAttributes);
     cudaMallocHost(&d_test, sizeof(float) * numTest * numAttributes);
     cudaMallocHost(&d_distances, sizeof(float) * numTrain * numTest);
@@ -181,5 +289,11 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     computeDistances<< < blocksPerGrid, threadsPerBlock, 0, streams[0]>> > (numTrain, numTest, numAttributes, d_train, d_test, d_distances);
     cudaMemcpyAsync(h_distances, d_distances, numTest * numTrain * sizeof(float), cudaMemcpyDeviceToHost, streams[0]);
     printMatrix(h_distances, numTrain, numTest);
-//    knn();
+    knn<< < numTest, min(numTrain, 256), 0>> > (numTrain, numAttributes, d_distances, d_predictions, d_train, k);
+    cudaError_t cudaError = cudaGetLastError();
+
+    if (cudaError != cudaSuccess) {
+        fprintf(stderr, "cudaGetLastError() returned %d: %s\n", cudaError, cudaGetErrorString(cudaError));
+        exit(EXIT_FAILURE);
+    }
 }
