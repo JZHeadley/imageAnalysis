@@ -1,8 +1,11 @@
 #include "imageMachineLearning.h"
 
 #include <math.h>
+#include <algorithm>
+#include <vector>
 
 #define DEBUG 1
+using namespace std;
 
 __inline__ __device__ void reduceToK(float *distancesTo, int *indexes, int k, int curSize) {
     // we're just going to do a simple bubble sort and pretend the elements past k don't exist
@@ -149,14 +152,14 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
 
         if (threadIdx.x == 1)
             predictions[blockIdx.x] = vote(distancesTo, indexes, train, k, numAttributes);
-//        if (DEBUG) {
-//            __syncthreads();
-//            if (threadIdx.x == 0 && blockIdx.x == 0) {
-//                for (int i = 0; i < gridDim.x; i++) {
-//                    printf("%i\n", predictions[i]);
-//                }
-//            }
-//        }
+        if (DEBUG) {
+            __syncthreads();
+            if (threadIdx.x == 0 && blockIdx.x == 0) {
+                for (int i = 0; i < gridDim.x; i++) {
+                    printf("%i\n", predictions[i]);
+                }
+            }
+        }
     }
 }
 
@@ -206,11 +209,14 @@ void *knnThreadValidation(void *args) {
     float *dataset = valArgs->dataset;
     int numInstances = valArgs->numInstances;
     int numAttributes = valArgs->numAttributes;
+
+    int instancesPerTask = ((numInstances + 10) - 1) / 10;
+    printf("thread %i numInstances %i instancesPerThread %i\n", threadId, numInstances, instancesPerTask);
     double *result = (double *) malloc(sizeof(double));
-    printf("Thread id %i is here\n", threadId);
 
-    *result = 42.0;
 
+    double accuracy = threadId;
+    *result = accuracy;
     return result;
 }
 
