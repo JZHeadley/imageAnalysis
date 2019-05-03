@@ -198,6 +198,8 @@ typedef struct {
     int threadId;
     int k;
     float *dataset;
+    int begin;
+    int end;
     int numInstances;
     int numAttributes;
 } ValidationArgs;
@@ -210,8 +212,8 @@ void *knnThreadValidation(void *args) {
     int numInstances = valArgs->numInstances;
     int numAttributes = valArgs->numAttributes;
 
-    int instancesPerTask = ((numInstances + 10) - 1) / 10;
-    printf("thread %i numInstances %i instancesPerThread %i\n", threadId, numInstances, instancesPerTask);
+    int instancesPerTask = ((numInstances) + 9) / 10;
+//    printf("thread %i numInstances %i instancesPerThread %i\n", threadId, numInstances, instancesPerTask);
     double *result = (double *) malloc(sizeof(double));
 
 
@@ -230,12 +232,29 @@ void knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int
 
     for (int i = 0; i < NUM_THREADS; i++)
         threadIds[i] = i;
-
+    int instancesToProcess = numInstances;
+    int initialInstancesPer = ceil((numInstances + 9) / 10);
+    int instancesPer = ceil((numInstances + 9) / 10);
+    bool flag = false;
+    printf("%i instances per %i\n", instancesToProcess, initialInstancesPer);
+    int beginIndex = 0, endIndex = 0;
     for (int i = 0; i < NUM_THREADS; i++) {
         ValidationArgs *args = new ValidationArgs;
         args->threadId = threadIds[i];
         args->k = k;
         args->dataset = dataset;
+        beginIndex = endIndex;
+        args->begin = beginIndex;
+
+        endIndex = beginIndex + instancesPer;
+        args->end = endIndex;
+        if (!flag && (initialInstancesPer != ceil((instancesToProcess + 9) / 10))) {
+            printf("swapping instances per from %i to %i\n", initialInstancesPer, (instancesToProcess + 9) / 10);
+            instancesPer = ceil((instancesToProcess + 9)) / 10;
+            flag = true;
+        }
+        instancesToProcess -= instancesPer;
+        printf("beginning at %i and ending at %i with %i instances left to process\n", beginIndex, endIndex, instancesToProcess);
         args->numInstances = numInstances;
         args->numAttributes = numAttributes;
         int status = pthread_create(&threads[i], NULL, knnThreadValidation, (void *) args);
