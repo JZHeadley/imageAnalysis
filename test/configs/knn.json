@@ -10,7 +10,13 @@
   "extract_channel": "grey",
   "operations": [
     {
-      "type": "knn"
+      "type": "feature-extract",
+      "output": "/home/jzheadley/tmp/extracted.csv"
+    },
+    {
+      "type": "knn",
+      "k": 3,
+      "input": "/home/jzheadley/tmp/extracted.csv"
     }
   ]
 }

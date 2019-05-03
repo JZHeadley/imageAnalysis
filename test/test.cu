@@ -127,6 +127,34 @@ void saveImage(string output_image_folder, Image *d_image, Image *h_image, Mat *
     imwrite(outPath, *outputMat);//, compression_params);
 }
 
+vector<float> readInDatasetCSV(int *numAttributes, int *datasetSize, string datasetPath) {
+    vector<float> datasetVec;
+    ifstream csvFile;
+    csvFile.open(datasetPath.c_str());
+    string line;
+    int numAts = 0;
+    bool numAtsSet = false;
+    int numInstances = 0;
+    while (getline(csvFile, line)) {
+        istringstream iss(line);
+        string lineStream;
+        string::size_type sz;
+
+
+        while (getline(iss, lineStream, ',')) {
+            datasetVec.push_back(stold(lineStream, &sz)); // convert to double
+            numAts++;
+        }
+        if (!numAtsSet) {
+            *numAttributes = numAts;
+            numAtsSet = true;
+        }
+        numInstances++;
+    }
+    *datasetSize = numInstances;
+    return datasetVec;
+}
+
 void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages, string extract_channel, regex fileFilter,
                        bool calcMSQEConfig) {
     vector <string> files = getFileNames(input_image_folder, fileFilter);
@@ -138,6 +166,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     int threshold;
     float *kern;
     int *medKern;
+    int k;
+    string datasetPath;
     Mat mat;
     int *h_histogram = nullptr;
     int *d_histogram = nullptr;
@@ -451,16 +481,22 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalKMeansThreshTime += milliseconds;
                 } else if (type == "knn") {
-                    float train[3][3] = {
-                            {1, 2,  0},
-                            {2, 1,  1},
-                            {4, 2, 0},
-                    };
-                    float test[2][3] = {
-                            {3, 11, -1},
-                            {7, 2, -1}
-                    };
-                    knn(3, 2, (float *) train, (float *) test, 3, 1);
+                    k = operations[i]["k"].asInt();
+                    datasetPath = operations[i]["input"].asString();
+                    float *dataset;
+                    int numAttributes;
+                    int numInstances;
+                    vector<float> datasetVec = readInDatasetCSV(&numAttributes, &numInstances, datasetPath);
+                    dataset = &datasetVec[0];
+//                    printf("%i %i\n", numInstances, numAttributes);
+//                    for (int i = 0; i < numInstances; i++) {
+//                        for (int j = 0; j < numAttributes; j++) {
+//                            printf("%f ", dataset[i * numAttributes + j]);
+//                        }
+//                        printf("\n");
+//                    }
+                    knnTenfoldCrossVal(dataset, numInstances, numAttributes, k);
+//                    knn(5, 2, (float *) train, (float *) test, 3, k);
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
