@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <vector>
 
-#define DEBUG 1
+#define DEBUG 0
 using namespace std;
 
 __inline__ __device__ void reduceToK(float *distancesTo, int *indexes, int k, int curSize) {
@@ -140,7 +140,7 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
         s *= 2;
 
         __syncthreads();
-        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
+//        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
         if (s > k && threadIdx.x == 1) { // we need to reduce it just a little more
             // remember to change both the indexes and distancesTo arrays
             reduceToK(distancesTo, indexes, k, s);
@@ -148,7 +148,7 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
         __syncthreads();
 
 
-        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
+//        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
 
         if (threadIdx.x == 1)
             predictions[blockIdx.x] = vote(distancesTo, indexes, train, k, numAttributes);
@@ -156,8 +156,9 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
             __syncthreads();
             if (threadIdx.x == 0 && blockIdx.x == 0) {
                 for (int i = 0; i < gridDim.x; i++) {
-                    printf("%i\n", predictions[i]);
+                    printf("%i ", predictions[i]);
                 }
+                printf("\n");
             }
         }
     }
@@ -202,20 +203,44 @@ typedef struct {
     int numAttributes;
 } ValidationArgs;
 
+double computeAccuracy(int *predictions, float *test, int numInstances, int numAttributes) {
+    int numCorrect = 0;
+    int numIncorrect = 0;
+    for (int i = 0; i < numInstances; i++) {
+        if (predictions[i] == test[i * numAttributes + numAttributes]) {
+            numCorrect++;
+        } else {
+            numIncorrect++;
+        }
+    }
+//    printf("numCorrect: %i numIncorrect: %i\n", numCorrect, numIncorrect);
+//    printf("accuracy was %f\n", (numCorrect / (double) numInstances));
+    return (numCorrect / (double) numInstances);
+}
+
 void *knnThreadValidation(void *args) {
     ValidationArgs *valArgs = (ValidationArgs *) args;
     int threadId = valArgs->threadId;
     int k = valArgs->k;
-    float *dataset = valArgs->dataset;
+    float *originalDataset = valArgs->dataset;
     int numInstances = valArgs->numInstances;
     int numAttributes = valArgs->numAttributes;
 
-    int instancesPerTask = ((numInstances + 10) - 1) / 10;
-    printf("thread %i numInstances %i instancesPerThread %i\n", threadId, numInstances, instancesPerTask);
+//    int instancesPerTask = ceil(numInstances / 10);
+//    printf("thread %i numInstances %i instancesPerThread %i\n", threadId, numInstances, instancesPerTask);
+    vector<float> datasetVec(originalDataset, originalDataset + numInstances * numAttributes);
+//    printf("datasetSize =%i, vecSize is %i\n", numInstances * numAttributes, datasetVec.size());
+    int numToRotate = (numInstances * .1);
+//    printf("thread %i rotating by %i\n", threadId, (numToRotate * numAttributes * threadId));
+    rotate(datasetVec.begin(), datasetVec.begin() + (numToRotate * numAttributes * threadId), datasetVec.end());
     double *result = (double *) malloc(sizeof(double));
+    float *dataset = &datasetVec[0];
+    int trainSize = (datasetVec.size() - (numAttributes * numToRotate)) / numAttributes;
+    int *predictions = (int *) malloc(sizeof(int) * numToRotate);
+//    printf("train size is %i testSize is %i\n", trainSize, numToRotate);
+    knn(trainSize, numToRotate, dataset, dataset + (trainSize), numAttributes, predictions, k);
 
-
-    double accuracy = threadId;
+    double accuracy = computeAccuracy(predictions, dataset + (trainSize), numToRotate, numAttributes);
     *result = accuracy;
     return result;
 }
