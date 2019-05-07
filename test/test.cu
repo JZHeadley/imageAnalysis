@@ -192,7 +192,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     float *kern;
     int *medKern;
     int k;
-    float knnAccuracy = 0;
+    float knnAccuracy = 0, knnPrecision = 0, knnRecall = 0;
+
     string datasetPath;
     Mat mat;
     int *h_histogram = nullptr;
@@ -534,7 +535,6 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                         classLabel = classes.find(className)->second;
                     }
                     outputClassLabels.push_back(classLabel);
-                    printf("class of %s is %i\n", className.c_str(), classLabel);
                     outputDataset.push_back(features);
                     cudaEventRecord(operationStop);
                     cudaEventSynchronize(operationStop);
@@ -621,7 +621,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     printf("Total time spent k Means thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalKMeansThreshTime, totalKMeansThreshTime / numImages);
 
     printf("Total time spent extracting features from images: %0.4f ms average of: %0.4f ms per image\n", totalFeatureExtractionTime, totalFeatureExtractionTime / numImages);
-    printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %f\n", numInstances, numAttributes - 1, totalKnnTime, knnAccuracy);
+    printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %0.4f%, precision of: %f, and recall of %f\n", numInstances,
+           numAttributes - 1, totalKnnTime, knnAccuracy * 100, knnPrecision, knnRecall);
 
 }
 

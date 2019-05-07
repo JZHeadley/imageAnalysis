@@ -199,10 +199,14 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     knn<< < numTest, min(numTrain, 256), 0, streams[0]>> > (numTrain, numAttributes, d_distances, d_predictions, d_train, k);
 
     cudaMemcpyAsync(h_predictions, d_predictions, numTest * sizeof(int), cudaMemcpyDeviceToHost, streams[0]);
-    cudaFreeHost(d_predictions);
-    cudaFreeHost(d_train);
-    cudaFreeHost(d_test);
-    cudaFreeHost(d_distances);
+    cudaFree(d_predictions);
+    cudaFree(d_train);
+    cudaFree(d_test);
+    cudaFree(d_distances);
+//    cudaFreeHost(d_predictions);
+//    cudaFreeHost(d_train);
+//    cudaFreeHost(d_test);
+//    cudaFreeHost(d_distances);
 //    cudaFreeHost(h_distances);
     cudaFreeHost(h_predictions);
     free(streams);
@@ -245,6 +249,7 @@ void *knnThreadValidation(void *args) {
 //    printf("datasetSize =%i, vecSize is %i\n", numInstances * numAttributes, datasetVec.size());
     int numToRotate = (numInstances * .1);
 //    printf("thread %i rotating by %i\n", threadId, (numToRotate * numAttributes * threadId));
+
     rotate(datasetVec.begin(), datasetVec.begin() + (numToRotate * numAttributes * threadId), datasetVec.end());
     double *result = (double *) malloc(sizeof(double));
     float *dataset = &datasetVec[0];
@@ -265,6 +270,10 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
     int NUM_THREADS = 10;
     pthread_t *threads = (pthread_t *) malloc(NUM_THREADS * sizeof(pthread_t));
     int *threadIds = (int *) malloc(NUM_THREADS * sizeof(int));
+    // shuffling the dataset so we don't cut off huge chunks of classes from the rotation below
+    vector<float> datasetVec(dataset, dataset + numInstances * numAttributes);
+    random_shuffle(datasetVec.begin(), datasetVec.end());
+    dataset = &datasetVec[0];
 
     for (int i = 0; i < NUM_THREADS; i++)
         threadIds[i] = i;
