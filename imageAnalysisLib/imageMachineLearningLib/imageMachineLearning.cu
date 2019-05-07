@@ -272,8 +272,8 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
     int *threadIds = (int *) malloc(NUM_THREADS * sizeof(int));
     // shuffling the dataset so we don't cut off huge chunks of classes from the rotation below
     vector<float> datasetVec(dataset, dataset + numInstances * numAttributes);
-    random_shuffle(datasetVec.begin(), datasetVec.end());
-    dataset = &datasetVec[0];
+//    random_shuffle(datasetVec.begin(), datasetVec.end());
+//    dataset = &datasetVec[0];
 
     for (int i = 0; i < NUM_THREADS; i++)
         threadIds[i] = i;
@@ -294,6 +294,7 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
         int err = pthread_join(threads[i], &thread_result);
 
         double threadAccuracy = *(double *) thread_result;
+        printf("thread %i had accuracy of %f\n", i, threadAccuracy);
         free(thread_result);
         totalAccuracy += threadAccuracy;
     }
