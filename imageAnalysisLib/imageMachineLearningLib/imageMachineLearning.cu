@@ -2,7 +2,8 @@
 
 #include <math.h>
 #include <algorithm>
-#include <vector>
+#include <thrust/device_ptr.h>
+#include <thrust/device_vector.h>
 
 #define DEBUG 0
 using namespace std;
@@ -177,22 +178,34 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     int threadsPerBlock = min(numTrain * numTest, 256);
     int blocksPerGrid = ((numTrain * numTest) + threadsPerBlock - 1) / threadsPerBlock;
     cudaMallocHost(&h_predictions, sizeof(int) * numTrain);
-    cudaMallocHost(&h_distances, sizeof(float) * numTrain * numTest);
+//    cudaMallocHost(&h_distances, sizeof(float) * numTrain * numTest);
 
-    cudaMallocHost(&d_predictions, sizeof(int) * numTest);
-    cudaMallocHost(&d_train, sizeof(float) * numTrain * numAttributes);
-    cudaMallocHost(&d_test, sizeof(float) * numTest * numAttributes);
-    cudaMallocHost(&d_distances, sizeof(float) * numTrain * numTest);
+//    cudaMallocHost(&d_predictions, sizeof(int) * numTest);
+//    cudaMallocHost(&d_train, sizeof(float) * numTrain * numAttributes);
+//    cudaMallocHost(&d_test, sizeof(float) * numTest * numAttributes);
+//    cudaMallocHost(&d_distances, sizeof(float) * numTrain * numTest);
+//TODO: figure out why the hell I mallocd on the host here...
+
+    cudaMalloc(&d_predictions, sizeof(int) * numTest);
+    cudaMalloc(&d_train, sizeof(float) * numTrain * numAttributes);
+    cudaMalloc(&d_test, sizeof(float) * numTest * numAttributes);
+    cudaMalloc(&d_distances, sizeof(float) * numTrain * numTest);
     cudaMemcpy(d_train, h_train, numTrain * numAttributes * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_test, h_test, numTest * numAttributes * sizeof(float), cudaMemcpyHostToDevice);
 //    cudaMemcpyAsync(d_distances, h_distances, numTriangularSpaces * sizeof(float), cudaMemcpyHostToDevice, streams[0]);
     computeDistances<< < blocksPerGrid, threadsPerBlock, 0, streams[0]>> > (numTrain, numTest, numAttributes, d_train, d_test, d_distances);
-    cudaMemcpyAsync(h_distances, d_distances, numTest * numTrain * sizeof(float), cudaMemcpyDeviceToHost, streams[0]);
+//    cudaMemcpyAsync(h_distances, d_distances, numTest * numTrain * sizeof(float), cudaMemcpyDeviceToHost, streams[0]);
 //    printMatrix(h_distances, numTrain, numTest);
     knn<< < numTest, min(numTrain, 256), 0, streams[0]>> > (numTrain, numAttributes, d_distances, d_predictions, d_train, k);
 
     cudaMemcpyAsync(h_predictions, d_predictions, numTest * sizeof(int), cudaMemcpyDeviceToHost, streams[0]);
-
+    cudaFreeHost(d_predictions);
+    cudaFreeHost(d_train);
+    cudaFreeHost(d_test);
+    cudaFreeHost(d_distances);
+//    cudaFreeHost(h_distances);
+    cudaFreeHost(h_predictions);
+    free(streams);
 }
 
 typedef struct {
@@ -245,7 +258,7 @@ void *knnThreadValidation(void *args) {
     return result;
 }
 
-void knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int k) {
+float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int k) {
 /*
  * Should be able to do each validation in parallel... which would be wonderful because cuda + more parallel = awesome
  */
@@ -275,5 +288,56 @@ void knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int
         free(thread_result);
         totalAccuracy += threadAccuracy;
     }
-    printf("Average accuracy was %f\n", totalAccuracy / 10);
+    printf("Average accuracy was %f\n", totalAccuracy / 10.0);
+    return totalAccuracy / 10.0;
+}
+
+void calcMode(int *d_histogram, int *mode) {
+    thrust::device_ptr<int> dp = thrust::device_pointer_cast(d_histogram);
+    thrust::device_vector<int> thrust_hist(dp, dp + 255);
+    thrust::device_vector<int>::iterator iter =
+            thrust::max_element(thrust_hist.begin(), thrust_hist.end());
+    int position = iter - thrust_hist.begin();
+    *mode = position;
+}
+
+int calculateCellArea(int *histogram, int numPixels) {
+    int area = 0;
+    // I make the assumption that the foreground is always the minority here
+    // because sometimes I get a white foreground and black background others
+    // I get a black foreground and white background.  Not quite sure why.
+    area = min(histogram[255], numPixels - histogram[255]);
+    return area;
+}
+
+int calculateCellPerimeter(int *histogram) {
+    int perimeter = 0;
+    perimeter = histogram[255];
+    return perimeter;
+}
+
+vector<float> featureExtraction(Image *image, Image *tempImage, int *h_histogram, int *d_histogram) {
+    vector<float> features;
+    float mean, stdDev;
+    calculateMeanAndStdDev(image, &mean, &stdDev);
+    Image *tempImage2 = new Image;
+    otsuThresholdImage(image, tempImage);
+    calculateHistogram(tempImage, h_histogram, d_histogram);
+    int totalCellArea = calculateCellArea(h_histogram, image->height * image->width);
+    compassFilter(tempImage, tempImage2);
+    calculateHistogram(tempImage2, h_histogram, d_histogram);
+    int totalCellPerimeter = calculateCellPerimeter(h_histogram);
+
+
+    //    int mode;
+//    calcMode(d_histogram, &mode);
+    features.push_back(mean);
+    features.push_back(stdDev);
+    features.push_back(totalCellArea);
+    features.push_back(totalCellPerimeter);
+//    features.push_back(mode);
+
+    CUDA_CHECK_RETURN(cudaFree(tempImage2->image))
+    CUDA_CHECK_RETURN(cudaFree(tempImage->image))
+    return features;
 }

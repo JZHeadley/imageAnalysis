@@ -14,6 +14,8 @@
 #include <iostream>
 #include <fstream>
 #include <regex>
+#include <iterator>
+#include <map>
 
 #include <dirent.h>
 #include <opencv2/opencv.hpp>
@@ -80,6 +82,10 @@ void readInKernel(Json::Value kernel, float *k, int numValues) {
     for (int i = 0; i < numValues; i++) {
         k[i] = k_vals[i].asFloat();
     }
+}
+
+bool mapContainsKey(map<string, int> workMap, string key) {
+    return !(workMap.find(key) == workMap.end());
 }
 
 void readInKernel(Json::Value kernel, int *k, int numValues) {
@@ -155,8 +161,27 @@ vector<float> readInDatasetCSV(int *numAttributes, int *datasetSize, string data
     return datasetVec;
 }
 
+void writeToCSV(string outputPath, vector <vector<float>> dataset, vector<int> classLabels) {
+    std::ofstream outFile;
+    outFile.open(outputPath);
+    string line;
+    stringstream ss;
+    int numFeatures = dataset[0].size();
+    for (int i = 0; i < dataset.size(); i++) {
+//        line = "";
+        for (int j = 0; j < numFeatures; j++) {
+            ss<<dataset[i][j];
+            ss<<",";
+//            line += ss.str();
+        }
+        ss<<classLabels[i]<<endl;
+    }
+    outFile<<ss.str();
+    outFile.close();
+}
+
 void executeOperations(Json::Value json, string input_image_folder, string output_image_folder, bool saveFinalImages, bool saveIntermediateImages, string extract_channel, regex fileFilter,
-                       bool calcMSQEConfig) {
+                       bool calcMSQEConfig, bool performKnn) {
     vector <string> files = getFileNames(input_image_folder, fileFilter);
     const Json::Value &operations = json["operations"];
     int numOperations = operations.size();
@@ -167,12 +192,16 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     float *kern;
     int *medKern;
     int k;
+    float knnAccuracy = 0;
     string datasetPath;
     Mat mat;
     int *h_histogram = nullptr;
     int *d_histogram = nullptr;
     int totalHist[256] = {0};
     int h_mappings[256];
+    string outputDatasetPath;
+    vector <vector<float>> outputDataset;
+    vector<int> outputClassLabels;
     cudaMallocHost(&h_histogram, sizeof(int) * 256);
     RGBImage *h_rgbImage = new RGBImage;
     RGBImage *d_rgbImage = new RGBImage;
@@ -180,15 +209,19 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     Image *d_tempImage = new Image;
     Image *h_image = new Image;
     Mat *outputMat = new Mat;
-//    types of cells: cyl inter let mod para super svar
+    float *dataset;
+    int numAttributes = 0;
+    int numInstances = 0;
 
-
-//    cudaStream_t *stream = new cudaStream_t;
+    regex classNameRegex("[0-9]+\\.BMP");
+    string className;
     cudaEvent_t operationStart, operationStop, batchStart, batchStop;
     cudaEventCreate(&operationStart);
     cudaEventCreate(&operationStop);
     cudaEventCreate(&batchStart);
     cudaEventCreate(&batchStop);
+    map<string, int> classes;
+    int classCount = 0;
     float milliseconds = 0;
     float totalBatchTime = 0,
             totalGrayscaleTime = 0,
@@ -206,12 +239,17 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             totalOtsuThreshTime = 0,
             totalKMeansThreshTime = 0,
             totalAverageFilterTime = 0,
-            totalMedianFilterTime = 0;
+            totalKnnTime = 0,
+            totalMedianFilterTime = 0,
+            totalFeatureExtractionTime = 0;
     float totalMSQE = 0;
     float numImages = files.size();
     bool randomnessSet = false;
     bool edgeDetectionSet = false;
+    int classLabel = -1;
+    bool extractedFeatures = false;
     cudaEventRecord(batchStart);
+
 
     for (int k = 0; k < files.size(); k++) { // iterate through all the images in the folder
         curFilePath = files[k];
@@ -480,23 +518,28 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     cudaEventSynchronize(operationStop);
                     cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
                     totalKMeansThreshTime += milliseconds;
-                } else if (type == "knn") {
-                    k = operations[i]["k"].asInt();
-                    datasetPath = operations[i]["input"].asString();
-                    float *dataset;
-                    int numAttributes;
-                    int numInstances;
-                    vector<float> datasetVec = readInDatasetCSV(&numAttributes, &numInstances, datasetPath);
-                    dataset = &datasetVec[0];
-//                    printf("%i %i\n", numInstances, numAttributes);
-//                    for (int i = 0; i < numInstances; i++) {
-//                        for (int j = 0; j < numAttributes; j++) {
-//                            printf("%f ", dataset[i * numAttributes + j]);
-//                        }
-//                        printf("\n");
-//                    }
-                    knnTenfoldCrossVal(dataset, numInstances, numAttributes, k);
-//                    knn(5, 2, (float *) train, (float *) test, 3, k);
+                } else if (type == "feature-extract") {
+                    if (!extractedFeatures) {
+                        outputDatasetPath = operations[i]["output"].asString();
+                        extractedFeatures = true;
+                    }
+                    cudaEventRecord(operationStart);
+                    vector<float> features = featureExtraction(d_image, d_tempImage, h_histogram, d_histogram);
+                    className = regex_replace(curFilePath, classNameRegex, "");
+                    if (!mapContainsKey(classes, className)) {
+                        classes.insert(pair<string, int>(className, classCount));
+                        classLabel = classCount;
+                        classCount++;
+                    } else {// we have the class label already
+                        classLabel = classes.find(className)->second;
+                    }
+                    outputClassLabels.push_back(classLabel);
+                    printf("class of %s is %i\n", className.c_str(), classLabel);
+                    outputDataset.push_back(features);
+                    cudaEventRecord(operationStop);
+                    cudaEventSynchronize(operationStop);
+                    cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+                    totalFeatureExtractionTime += milliseconds;
                 } else {
                     printf("Unsupported Operation\n");
                     supported = false;
@@ -511,6 +554,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             if (saveFinalImages) {
                 saveImage(output_image_folder, d_image, h_image, outputMat, "", curFilePath);
             }
+
             cudaEventRecord(batchStop);
             cudaEventSynchronize(batchStop);
             cudaEventElapsedTime(&milliseconds, batchStart, batchStop);
@@ -524,6 +568,21 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
             numImages--;
             continue;
         }
+    }
+    if (extractedFeatures) {
+        writeToCSV(outputDatasetPath, outputDataset, outputClassLabels);
+    }
+    if (performKnn) {
+        cudaEventRecord(operationStart);
+        k = json["knnConfig"]["k"].asInt();
+        datasetPath = json["knnConfig"]["input"].asString();
+        vector<float> datasetVec = readInDatasetCSV(&numAttributes, &numInstances, datasetPath);
+        dataset = &datasetVec[0];
+        knnAccuracy = knnTenfoldCrossVal(dataset, numInstances, numAttributes, k);
+        cudaEventRecord(operationStop);
+        cudaEventSynchronize(operationStop);
+        cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
+        totalKnnTime += milliseconds;
     }
     if (edgeDetectionSet) {
         cleanupEdgeDetection();
@@ -561,6 +620,9 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     printf("Total time spent Otsu thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalOtsuThreshTime, totalOtsuThreshTime / numImages);
     printf("Total time spent k Means thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalKMeansThreshTime, totalKMeansThreshTime / numImages);
 
+    printf("Total time spent extracting features from images: %0.4f ms average of: %0.4f ms per image\n", totalFeatureExtractionTime, totalFeatureExtractionTime / numImages);
+    printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %f\n", numInstances, numAttributes - 1, totalKnnTime, knnAccuracy);
+
 }
 
 
@@ -581,12 +643,14 @@ int main(int argc, char *argv[]) {
     bool saveFinalImages = json["saveFinalImages"].asBool();
     bool saveIntermediateImages = json["saveIntermediateImages"].asBool();
     bool calcMSQEConfig = json["calc_MSQE"].asBool();
+    bool performKnn = json["knn"].asBool();
     printf("Input: %s\nOutput: %s\nSaving intermediates: %s\nSaving Finals: %s\n",
            input_image_folder.c_str(),
            output_image_folder.c_str(),
            saveIntermediateImages ? "true" : "false",
-           saveFinalImages ? "true" : "false");
-    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel, fileFilter, calcMSQEConfig);
+           saveFinalImages ? "true" : "false",
+           performKnn ? "true" : "false");
+    executeOperations(json, input_image_folder, output_image_folder, saveFinalImages, saveIntermediateImages, extract_channel, fileFilter, calcMSQEConfig, performKnn);
 
 
     return 0;

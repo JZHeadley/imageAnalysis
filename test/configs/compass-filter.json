@@ -10,10 +10,10 @@
   "extract_channel": "grey",
   "operations": [
     {
-      "type": "compass-filter"
+      "type": "otsu-thresh"
     },
     {
-      "type": "otsu-thresh"
+      "type": "compass-filter"
     }
   ]
 }

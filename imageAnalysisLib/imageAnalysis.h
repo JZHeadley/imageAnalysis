@@ -108,4 +108,6 @@ void imageQuantization(Image *image, Image *output, int *levels, int numLevels);
 
 int calcMSQE(Image *d_image, Image *d_tempImage);
 
+void calculateMeanAndStdDev(Image *image, float *mean, float *stdDev);
+
 #endif
