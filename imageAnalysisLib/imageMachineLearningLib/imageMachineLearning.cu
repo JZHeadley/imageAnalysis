@@ -103,7 +103,6 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
     __shared__ int indexes[256];
     __shared__ float distancesTo[256];
     if (numTrain > blockDim.x) { // need an initial reduction so we can fit the best instances into our shared memory to use to vote
-        printf("more train than 256");
         int instancesPerThread = (numTrain + blockDim.x - 1) / blockDim.x;
         int bestInstanceId = -1;
         float bestDistance = INT_MAX;
@@ -141,7 +140,7 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
         s *= 2;
 
         __syncthreads();
-//        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
+        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
         if (s > k && threadIdx.x == 1) { // we need to reduce it just a little more
             // remember to change both the indexes and distancesTo arrays
             reduceToK(distancesTo, indexes, k, s);
@@ -149,7 +148,7 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
         __syncthreads();
 
 
-//        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
+        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
 
         if (threadIdx.x == 1)
             predictions[blockIdx.x] = vote(distancesTo, indexes, train, k, numAttributes);
@@ -197,8 +196,16 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
 //    cudaMemcpyAsync(h_distances, d_distances, numTest * numTrain * sizeof(float), cudaMemcpyDeviceToHost, streams[0]);
 //    printMatrix(h_distances, numTrain, numTest);
     knn<< < numTest, min(numTrain, 256), 0, streams[0]>> > (numTrain, numAttributes, d_distances, d_predictions, d_train, k);
+    cudaDeviceSynchronize();
 
     cudaMemcpyAsync(h_predictions, d_predictions, numTest * sizeof(int), cudaMemcpyDeviceToHost, streams[0]);
+    if (DEBUG) {
+        printf("host predictions:\t");
+        for (int i = 0; i < numTest; i++) {
+            printf("%i ", h_predictions[i]);
+        }
+        printf("\n");
+    }
     cudaFree(d_predictions);
     cudaFree(d_train);
     cudaFree(d_test);
@@ -208,7 +215,7 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
 //    cudaFreeHost(d_test);
 //    cudaFreeHost(d_distances);
 //    cudaFreeHost(h_distances);
-    cudaFreeHost(h_predictions);
+//    cudaFreeHost(h_predictions);
     free(streams);
 }
 
@@ -224,14 +231,15 @@ double computeAccuracy(int *predictions, float *test, int numInstances, int numA
     int numCorrect = 0;
     int numIncorrect = 0;
     for (int i = 0; i < numInstances; i++) {
-        if (predictions[i] == test[i * numAttributes + numAttributes]) {
+        if (predictions[i] == (int) test[i * numAttributes + numAttributes - 1]) {
             numCorrect++;
         } else {
+//            printf("%f is not %i\n", test[i * numAttributes + numAttributes-1], predictions[i]);
             numIncorrect++;
         }
     }
-//    printf("numCorrect: %i numIncorrect: %i\n", numCorrect, numIncorrect);
-//    printf("accuracy was %f\n", (numCorrect / (double) numInstances));
+    printf("numCorrect: %i numIncorrect: %i\n", numCorrect, numIncorrect);
+    printf("accuracy was %f\n", (numCorrect / (double) numInstances));
     return (numCorrect / (double) numInstances);
 }
 

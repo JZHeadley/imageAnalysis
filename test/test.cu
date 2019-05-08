@@ -622,7 +622,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
 
     printf("Total time spent extracting features from images: %0.4f ms average of: %0.4f ms per image\n", totalFeatureExtractionTime, totalFeatureExtractionTime / numImages);
     printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %0.4f%, precision of: %f, and recall of %f\n", numInstances,
-           numAttributes - 1, totalKnnTime, knnAccuracy * 100, knnPrecision, knnRecall);
+           (numAttributes > 0) ? numAttributes - 1 : 0, totalKnnTime, (float)(knnAccuracy * 100.0), knnPrecision, knnRecall);
 
 }
 
