@@ -141,23 +141,34 @@ vector<float> readInDatasetCSV(int *numAttributes, int *datasetSize, string data
     int numAts = 0;
     bool numAtsSet = false;
     int numInstances = 0;
+    vector <vector<float>> tempDataset;
     while (getline(csvFile, line)) {
         istringstream iss(line);
         string lineStream;
         string::size_type sz;
-
-
+        vector<float> lineData;
         while (getline(iss, lineStream, ',')) {
-            datasetVec.push_back(stold(lineStream, &sz)); // convert to double
+//            datasetVec.push_back(stold(lineStream, &sz)); // convert to double
+            lineData.push_back(stold(lineStream, &sz)); // convert to double
             numAts++;
         }
         if (!numAtsSet) {
             *numAttributes = numAts;
             numAtsSet = true;
         }
+
+        tempDataset.push_back(lineData);
         numInstances++;
     }
+    random_shuffle(tempDataset.begin(), tempDataset.end());
     *datasetSize = numInstances;
+    for (int i = 0; i < numInstances; i++) {
+        for (int j = 0; j < *numAttributes; j++) {
+//            printf("%f ", tempDataset[i][j]);
+            datasetVec.push_back(tempDataset[i][j]);
+        }
+//        printf("\n");
+    }
     return datasetVec;
 }
 
@@ -526,6 +537,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
                     }
                     cudaEventRecord(operationStart);
                     vector<float> features = featureExtraction(d_image, d_tempImage, h_histogram, d_histogram);
+//                    vector<float> features = extractAllPixelsAsFeatures(d_image);
                     className = regex_replace(curFilePath, classNameRegex, "");
                     if (!mapContainsKey(classes, className)) {
                         classes.insert(pair<string, int>(className, classCount));
@@ -621,8 +633,8 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     printf("Total time spent k Means thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalKMeansThreshTime, totalKMeansThreshTime / numImages);
 
     printf("Total time spent extracting features from images: %0.4f ms average of: %0.4f ms per image\n", totalFeatureExtractionTime, totalFeatureExtractionTime / numImages);
-    printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %0.4f%, precision of: %f, and recall of %f\n", numInstances,
-           (numAttributes > 0) ? numAttributes - 1 : 0, totalKnnTime, (float)(knnAccuracy * 100.0), knnPrecision, knnRecall);
+    printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %0.4f%\n"/*", precision of: %f, and recall of %f\n"*/, numInstances,
+           (numAttributes > 0) ? numAttributes - 1 : 0, totalKnnTime, (float) (knnAccuracy * 100.0), knnPrecision, knnRecall);
 
 }
 

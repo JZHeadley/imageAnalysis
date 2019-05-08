@@ -22,5 +22,6 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
 
 vector<float> featureExtraction(Image *image, Image *tempImage, int *h_histogram, int *d_histogram);
 
+vector<float> extractAllPixelsAsFeatures(Image *image);
 
 #endif

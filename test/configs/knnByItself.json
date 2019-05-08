@@ -8,15 +8,10 @@
   "output_dir": "/home/jzheadley/projects/classes/cmsc630/project1/output_images",
   // red, blue, green, or grey
   "extract_channel": "grey",
-  "operations": [
-    {
-      "type": "feature-extract",
-      "output": "/home/jzheadley/tmp/extracted.csv"
-    }
-  ],
   "knn": true,
   "knnConfig": {
     "k": 3,
     "input": "/home/jzheadley/tmp/extracted.csv"
+//    "input": "/home/jzheadley/tmp/everyPixel.csv"
   }
 }

@@ -8,12 +8,12 @@
 #define DEBUG 0
 using namespace std;
 
-__inline__ __device__ void reduceToK(float *distancesTo, int *indexes, int k, int curSize) {
+__inline__ __device__ void reduceToK(float *distancesTo, int *indexes, int closestPowerOfTwo) {
     // we're just going to do a simple bubble sort and pretend the elements past k don't exist
     float tmp;
     unsigned char idx;
-    for (int i = 0; i < curSize - 1; i++) {
-        for (int j = 0; j < curSize - i - 1; j++) {
+    for (int i = 0; i < closestPowerOfTwo - 1; i++) {
+        for (int j = 0; j < closestPowerOfTwo - i - 1; j++) {
             if (distancesTo[j] > distancesTo[j + 1]) {
                 tmp = distancesTo[j];
                 idx = indexes[j];
@@ -122,7 +122,7 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
         distancesTo[threadIdx.x] = distances[blockDim.x * blockIdx.x + threadIdx.x];
     }
     __syncthreads(); // get all the threads of the block together again after the initial reduction
-    printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
+//    printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
     if (threadIdx.x < blockDim.x / 2) // only need the first half (128) of the threads to work on the 256 length shared mem arrays
     {
         int s;
@@ -140,27 +140,18 @@ __global__ void knn(int numTrain, int numAttributes, float *distances, int *pred
         s *= 2;
 
         __syncthreads();
-        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
+//        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
         if (s > k && threadIdx.x == 1) { // we need to reduce it just a little more
             // remember to change both the indexes and distancesTo arrays
-            reduceToK(distancesTo, indexes, k, s);
+            reduceToK(distancesTo, indexes, s);
         }
         __syncthreads();
 
 
-        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
+//        printDistanceInfo(indexes, distancesTo, blockDim.x, threadIdx.x, blockIdx.x);
 
         if (threadIdx.x == 1)
             predictions[blockIdx.x] = vote(distancesTo, indexes, train, k, numAttributes);
-        if (DEBUG) {
-            __syncthreads();
-            if (threadIdx.x == 0 && blockIdx.x == 0) {
-                for (int i = 0; i < gridDim.x; i++) {
-                    printf("%i ", predictions[i]);
-                }
-                printf("\n");
-            }
-        }
     }
 }
 
@@ -177,14 +168,6 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     int threadsPerBlock = min(numTrain * numTest, 256);
     int blocksPerGrid = ((numTrain * numTest) + threadsPerBlock - 1) / threadsPerBlock;
     cudaMallocHost(&h_predictions, sizeof(int) * numTrain);
-//    cudaMallocHost(&h_distances, sizeof(float) * numTrain * numTest);
-
-//    cudaMallocHost(&d_predictions, sizeof(int) * numTest);
-//    cudaMallocHost(&d_train, sizeof(float) * numTrain * numAttributes);
-//    cudaMallocHost(&d_test, sizeof(float) * numTest * numAttributes);
-//    cudaMallocHost(&d_distances, sizeof(float) * numTrain * numTest);
-//TODO: figure out why the hell I mallocd on the host here...
-
     cudaMalloc(&d_predictions, sizeof(int) * numTest);
     cudaMalloc(&d_train, sizeof(float) * numTrain * numAttributes);
     cudaMalloc(&d_test, sizeof(float) * numTest * numAttributes);
@@ -210,12 +193,6 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     cudaFree(d_train);
     cudaFree(d_test);
     cudaFree(d_distances);
-//    cudaFreeHost(d_predictions);
-//    cudaFreeHost(d_train);
-//    cudaFreeHost(d_test);
-//    cudaFreeHost(d_distances);
-//    cudaFreeHost(h_distances);
-//    cudaFreeHost(h_predictions);
     free(streams);
 }
 
@@ -238,8 +215,8 @@ double computeAccuracy(int *predictions, float *test, int numInstances, int numA
             numIncorrect++;
         }
     }
-    printf("numCorrect: %i numIncorrect: %i\n", numCorrect, numIncorrect);
-    printf("accuracy was %f\n", (numCorrect / (double) numInstances));
+//    printf("numCorrect: %i numIncorrect: %i\n", numCorrect, numIncorrect);
+//    printf("accuracy was %f\n", (numCorrect / (double) numInstances));
     return (numCorrect / (double) numInstances);
 }
 
@@ -251,12 +228,8 @@ void *knnThreadValidation(void *args) {
     int numInstances = valArgs->numInstances;
     int numAttributes = valArgs->numAttributes;
 
-//    int instancesPerTask = ceil(numInstances / 10);
-//    printf("thread %i numInstances %i instancesPerThread %i\n", threadId, numInstances, instancesPerTask);
     vector<float> datasetVec(originalDataset, originalDataset + numInstances * numAttributes);
-//    printf("datasetSize =%i, vecSize is %i\n", numInstances * numAttributes, datasetVec.size());
     int numToRotate = (numInstances * .1);
-//    printf("thread %i rotating by %i\n", threadId, (numToRotate * numAttributes * threadId));
 
     rotate(datasetVec.begin(), datasetVec.begin() + (numToRotate * numAttributes * threadId), datasetVec.end());
     double *result = (double *) malloc(sizeof(double));
@@ -280,8 +253,6 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
     int *threadIds = (int *) malloc(NUM_THREADS * sizeof(int));
     // shuffling the dataset so we don't cut off huge chunks of classes from the rotation below
     vector<float> datasetVec(dataset, dataset + numInstances * numAttributes);
-//    random_shuffle(datasetVec.begin(), datasetVec.end());
-//    dataset = &datasetVec[0];
 
     for (int i = 0; i < NUM_THREADS; i++)
         threadIds[i] = i;
@@ -310,13 +281,16 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
     return totalAccuracy / 10.0;
 }
 
-void calcMode(int *d_histogram, int *mode) {
-    thrust::device_ptr<int> dp = thrust::device_pointer_cast(d_histogram);
-    thrust::device_vector<int> thrust_hist(dp, dp + 255);
-    thrust::device_vector<int>::iterator iter =
-            thrust::max_element(thrust_hist.begin(), thrust_hist.end());
-    int position = iter - thrust_hist.begin();
-    *mode = position;
+int calcMode(int *histogram) {
+    int maxVal = 0;
+    int maxIdx = -1;
+    for (int i = 0; i < 256; i++) {
+        if (maxVal < histogram[i]) {
+            maxVal = histogram[i];
+            maxIdx = i;
+        }
+    }
+    return maxIdx;
 }
 
 int calculateCellArea(int *histogram, int numPixels) {
@@ -334,6 +308,31 @@ int calculateCellPerimeter(int *histogram) {
     return perimeter;
 }
 
+vector<float> extractAllPixelsAsFeatures(Image *image) {
+    vector<float> features;
+    int totalPixels = image->height * image->width;
+    unsigned char *imageVals = (unsigned char *) malloc(totalPixels * sizeof(unsigned char));
+    cudaMemcpy(imageVals, image->image, totalPixels * sizeof(unsigned char), cudaMemcpyDeviceToHost);
+    for (int i = 0; i < totalPixels; i++) {
+        features.push_back(imageVals[i]);
+    }
+    return features;
+}
+
+void calcMinAndMaxOfRange(int *rangeMin, int *rangeMax, int *histogram) {
+    for (int i = 0; i < 256; ++i) {
+        if (histogram[i] != 0 && *rangeMin == -1) {
+            *rangeMin = i;
+        }
+    }
+    for (int i = 255; i >= 0; i--) {
+        if (histogram[i] != 0 && *rangeMin != -1 && *rangeMax == -1) {
+            *rangeMax = i;
+        }
+    }
+
+}
+
 vector<float> featureExtraction(Image *image, Image *tempImage, int *h_histogram, int *d_histogram) {
     vector<float> features;
     float mean, stdDev;
@@ -346,15 +345,20 @@ vector<float> featureExtraction(Image *image, Image *tempImage, int *h_histogram
     calculateHistogram(tempImage2, h_histogram, d_histogram);
     int totalCellPerimeter = calculateCellPerimeter(h_histogram);
 
-
-    //    int mode;
-//    calcMode(d_histogram, &mode);
+    calculateHistogram(image, h_histogram, d_histogram);
+    int mode = calcMode(h_histogram);
+    int rangeMin = -1, rangeMax = -1;
+    calcMinAndMaxOfRange(&rangeMin, &rangeMax, h_histogram);
     features.push_back(mean);
     features.push_back(stdDev);
     features.push_back(totalCellArea);
     features.push_back(totalCellPerimeter);
-//    features.push_back(mode);
-
+    features.push_back(mode);
+    features.push_back(rangeMin);
+    features.push_back(rangeMax);
+//    for (int i = 0; i < 256; ++i) {
+//        features.push_back(h_histogram[i]);
+//    }
     CUDA_CHECK_RETURN(cudaFree(tempImage2->image))
     CUDA_CHECK_RETURN(cudaFree(tempImage->image))
     return features;
