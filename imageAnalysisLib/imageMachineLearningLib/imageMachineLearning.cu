@@ -161,13 +161,13 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     for (int i = 0; i < NUM_STREAMS; i++) // multiple streams
         cudaStreamCreate(&streams[i]);
 
-    float *h_distances;
+//    float *h_distances;
     float *d_train, *d_test, *d_distances;
     int *d_predictions;
 
     int threadsPerBlock = min(numTrain * numTest, 256);
     int blocksPerGrid = ((numTrain * numTest) + threadsPerBlock - 1) / threadsPerBlock;
-    cudaMallocHost(&h_predictions, sizeof(int) * numTrain);
+//    cudaMallocHost(&h_predictions, sizeof(int) * numTrain);
     cudaMalloc(&d_predictions, sizeof(int) * numTest);
     cudaMalloc(&d_train, sizeof(float) * numTrain * numAttributes);
     cudaMalloc(&d_test, sizeof(float) * numTest * numAttributes);
@@ -181,7 +181,7 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
     knn<< < numTest, min(numTrain, 256), 0, streams[0]>> > (numTrain, numAttributes, d_distances, d_predictions, d_train, k);
     cudaDeviceSynchronize();
 
-    cudaMemcpyAsync(h_predictions, d_predictions, numTest * sizeof(int), cudaMemcpyDeviceToHost, streams[0]);
+    cudaMemcpy(h_predictions, d_predictions, numTest * sizeof(int), cudaMemcpyDeviceToHost);
     if (DEBUG) {
         printf("host predictions:\t");
         for (int i = 0; i < numTest; i++) {
@@ -189,7 +189,7 @@ void knn(int numTrain, int numTest, float *h_train, float *h_test, int numAttrib
         }
         printf("\n");
     }
-    cudaFree(d_predictions);
+//    cudaFree(d_predictions);
     cudaFree(d_train);
     cudaFree(d_test);
     cudaFree(d_distances);
@@ -202,23 +202,38 @@ typedef struct {
     float *dataset;
     int numInstances;
     int numAttributes;
+    float *precision;
+    float *recall;
 } ValidationArgs;
 
-double computeAccuracy(int *predictions, float *test, int numInstances, int numAttributes) {
-    int numCorrect = 0;
-    int numIncorrect = 0;
-    for (int i = 0; i < numInstances; i++) {
-        if (predictions[i] == (int) test[i * numAttributes + numAttributes - 1]) {
-            numCorrect++;
-        } else {
-//            printf("%f is not %i\n", test[i * numAttributes + numAttributes-1], predictions[i]);
-            numIncorrect++;
-        }
+/*
+ * the confusion matrix and accuracy computation methods are adapted from those provided to me by Dr. Cano for his 603 class.
+ */
+#define NUM_CLASSES 6
+
+int *computeConfusionMatrix(int *predictions, float *dataset, int numAttributes, int numInstances) {
+    int *confusionMatrix = (int *) calloc(NUM_CLASSES * NUM_CLASSES, sizeof(int)); // matriz size numberClasses x numberClasses
+
+    for (int i = 0; i < numInstances; i++) // for each instance compare the true class and predicted class
+    {
+        int trueClass = dataset[i * numAttributes + numAttributes - 1];
+        int predictedClass = predictions[i];
+//        printf("true class was %i predicted was %i\n", trueClass, predictedClass);
+        confusionMatrix[trueClass * NUM_CLASSES + predictedClass]++;
     }
-//    printf("numCorrect: %i numIncorrect: %i\n", numCorrect, numIncorrect);
-//    printf("accuracy was %f\n", (numCorrect / (double) numInstances));
-    return (numCorrect / (double) numInstances);
+
+    return confusionMatrix;
 }
+
+float computeAccuracy(int *confusionMatrix, int numInstances) {
+    int successfulPredictions = 0;
+    for (int i = 0; i < NUM_CLASSES; i++) {
+        successfulPredictions += confusionMatrix[i * NUM_CLASSES + i]; // elements in the diagnoal are correct predictions
+    }
+
+    return successfulPredictions / (float) numInstances;
+}
+
 
 void *knnThreadValidation(void *args) {
     ValidationArgs *valArgs = (ValidationArgs *) args;
@@ -227,8 +242,10 @@ void *knnThreadValidation(void *args) {
     float *originalDataset = valArgs->dataset;
     int numInstances = valArgs->numInstances;
     int numAttributes = valArgs->numAttributes;
-
+    float *precisions = valArgs->precision;
+    float *recalls = valArgs->recall;
     vector<float> datasetVec(originalDataset, originalDataset + numInstances * numAttributes);
+    // numToRotate is testSize
     int numToRotate = (numInstances * .1);
 
     rotate(datasetVec.begin(), datasetVec.begin() + (numToRotate * numAttributes * threadId), datasetVec.end());
@@ -236,15 +253,22 @@ void *knnThreadValidation(void *args) {
     float *dataset = &datasetVec[0];
     int trainSize = (datasetVec.size() - (numAttributes * numToRotate)) / numAttributes;
     int *predictions = (int *) malloc(sizeof(int) * numToRotate);
-//    printf("train size is %i testSize is %i\n", trainSize, numToRotate);
     knn(trainSize, numToRotate, dataset, dataset + (trainSize), numAttributes, predictions, k);
+    int *confusionMatrix = computeConfusionMatrix(predictions, dataset + trainSize, numAttributes, numToRotate);
 
-    double accuracy = computeAccuracy(predictions, dataset + (trainSize), numToRotate, numAttributes);
+    if (threadId == 0)
+        for (int i = 0; i < NUM_CLASSES; i++) {
+            for (int j = 0; j < NUM_CLASSES; j++) {
+                printf("%i\t", confusionMatrix[NUM_CLASSES * i + j]);
+            }
+            printf("\n");
+        }
+    float accuracy = computeAccuracy(confusionMatrix, numToRotate);
     *result = accuracy;
     return result;
 }
 
-float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int k) {
+float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int k, float *precision, float *recall) {
 /*
  * Should be able to do each validation in parallel... which would be wonderful because cuda + more parallel = awesome
  */
@@ -256,6 +280,8 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
 
     for (int i = 0; i < NUM_THREADS; i++)
         threadIds[i] = i;
+    float *threadPrecision = (float *) calloc(NUM_THREADS, sizeof(float));
+    float *threadRecall = (float *) calloc(NUM_THREADS, sizeof(float));
 
     for (int i = 0; i < NUM_THREADS; i++) {
         ValidationArgs *args = new ValidationArgs;
@@ -264,20 +290,30 @@ float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, in
         args->dataset = dataset;
         args->numInstances = numInstances;
         args->numAttributes = numAttributes;
+        args->precision = threadPrecision;
+        args->recall = threadRecall;
+
         int status = pthread_create(&threads[i], NULL, knnThreadValidation, (void *) args);
 
     }
+    float threadTotalPrecision = 0;
+    float threadTotalRecall = 0;
     double totalAccuracy = 0.0;
     for (int i = 0; i < NUM_THREADS; i++) {
         void *thread_result;
         int err = pthread_join(threads[i], &thread_result);
-
+        threadTotalPrecision += threadPrecision[i];
+        threadTotalRecall += threadRecall[i];
         double threadAccuracy = *(double *) thread_result;
-        printf("thread %i had accuracy of %f\n", i, threadAccuracy);
+        printf("thread %i had accuracy of %f, precision of %f, and recall of %f\n", i, threadAccuracy, threadPrecision[i], threadRecall[i]);
         free(thread_result);
         totalAccuracy += threadAccuracy;
     }
     printf("Average accuracy was %f\n", totalAccuracy / 10.0);
+    *precision = threadTotalPrecision / 10.0;
+    *recall = threadTotalRecall / 10.0;
+    free(threadPrecision);
+    free(threadRecall);
     return totalAccuracy / 10.0;
 }
 

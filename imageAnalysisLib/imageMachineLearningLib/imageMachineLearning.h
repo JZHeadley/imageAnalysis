@@ -18,7 +18,7 @@ void knn(int numTrain, int numTest, float *train, float *test, int numAttributes
 /*
  * This is kinda annoying to do...
  */
-float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int k);
+float knnTenfoldCrossVal(float *dataset, int numInstances, int numAttributes, int k, float *precision, float *recall);
 
 vector<float> featureExtraction(Image *image, Image *tempImage, int *h_histogram, int *d_histogram);
 

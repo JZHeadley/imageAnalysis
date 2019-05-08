@@ -590,7 +590,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
         datasetPath = json["knnConfig"]["input"].asString();
         vector<float> datasetVec = readInDatasetCSV(&numAttributes, &numInstances, datasetPath);
         dataset = &datasetVec[0];
-        knnAccuracy = knnTenfoldCrossVal(dataset, numInstances, numAttributes, k);
+        knnAccuracy = knnTenfoldCrossVal(dataset, numInstances, numAttributes, k,&knnPrecision,&knnRecall);
         cudaEventRecord(operationStop);
         cudaEventSynchronize(operationStop);
         cudaEventElapsedTime(&milliseconds, operationStart, operationStop);
@@ -633,7 +633,7 @@ void executeOperations(Json::Value json, string input_image_folder, string outpu
     printf("Total time spent k Means thresholding images: %0.4f ms average of: %0.4f ms per image\n", totalKMeansThreshTime, totalKMeansThreshTime / numImages);
 
     printf("Total time spent extracting features from images: %0.4f ms average of: %0.4f ms per image\n", totalFeatureExtractionTime, totalFeatureExtractionTime / numImages);
-    printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %0.4f%\n"/*", precision of: %f, and recall of %f\n"*/, numInstances,
+    printf("Total time required for a tenfold cross validation knn on %i instances with %i features: %0.4f ms achieved accuracy of %0.4f%, precision of: %f, and recall of %f\n", numInstances,
            (numAttributes > 0) ? numAttributes - 1 : 0, totalKnnTime, (float) (knnAccuracy * 100.0), knnPrecision, knnRecall);
 
 }
