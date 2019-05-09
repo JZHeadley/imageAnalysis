@@ -144,6 +144,15 @@
     },
     {
       "type": "kMeans-thresh"
+    },
+    {
+      "type": "feature-extract",
+      "output": "/home/jzheadley/tmp/extracted.csv"
     }
-  ]
+  ],
+  "knn": true,
+  "knnConfig": {
+    "k": 3,
+    "input": "/home/jzheadley/tmp/extracted.csv"
+  }
 }

@@ -99,7 +99,7 @@ __device__ __inline__ void printDistanceInfo(int *indexes, float *distances, int
     }
 }
 
-__global__ void knn(int numTrain, int numAttributes, float *distances, int *predictions, float *train, int k) {
+__global__ void  knn(int numTrain, int numAttributes, float *distances, int *predictions, float *train, int k) {
     __shared__ int indexes[256];
     __shared__ float distancesTo[256];
     if (numTrain > blockDim.x) { // need an initial reduction so we can fit the best instances into our shared memory to use to vote
@@ -235,6 +235,25 @@ float computeAccuracy(int *confusionMatrix, int numInstances) {
 }
 
 
+void computePrecisionAndRecall(int *confusion, float *precision, float *recall) {
+    float totalClassPrecision = 0;
+    float totalClassRecall = 0;
+    for (int i = 0; i < NUM_CLASSES; ++i) {
+        int numPredictedRow = 0;
+        int numPredictedCol = 0;
+        for (int j = 0; j < NUM_CLASSES; ++j) {
+            numPredictedCol += confusion[i + j * NUM_CLASSES];
+            numPredictedRow += confusion[i * NUM_CLASSES + j];
+        }
+        int truePositive = confusion[i * NUM_CLASSES + i];
+
+        totalClassPrecision += (numPredictedRow > 0) ? truePositive / (float) numPredictedRow : 0;
+        totalClassRecall += (numPredictedCol > 0) ? truePositive / (float) numPredictedCol : 0;
+    }
+    *precision = totalClassPrecision / NUM_CLASSES;
+    *recall = totalClassRecall / NUM_CLASSES;
+}
+
 void *knnThreadValidation(void *args) {
     ValidationArgs *valArgs = (ValidationArgs *) args;
     int threadId = valArgs->threadId;
@@ -255,15 +274,17 @@ void *knnThreadValidation(void *args) {
     int *predictions = (int *) malloc(sizeof(int) * numToRotate);
     knn(trainSize, numToRotate, dataset, dataset + (trainSize), numAttributes, predictions, k);
     int *confusionMatrix = computeConfusionMatrix(predictions, dataset + trainSize, numAttributes, numToRotate);
-
-    if (threadId == 0)
-        for (int i = 0; i < NUM_CLASSES; i++) {
-            for (int j = 0; j < NUM_CLASSES; j++) {
-                printf("%i\t", confusionMatrix[NUM_CLASSES * i + j]);
-            }
-            printf("\n");
-        }
     float accuracy = computeAccuracy(confusionMatrix, numToRotate);
+    computePrecisionAndRecall(confusionMatrix, &precisions[threadId], &recalls[threadId]);
+//    if (threadId == 0) {
+//        for (int i = 0; i < NUM_CLASSES; i++) {
+//            for (int j = 0; j < NUM_CLASSES; j++) {
+//                printf("%i\t", confusionMatrix[NUM_CLASSES * i + j]);
+//            }
+//            printf("\n");
+//        }
+//        printf("accuracy of %f precision of %f recall of %f\n", accuracy, precisions[threadId], recalls[threadId]);
+//    }
     *result = accuracy;
     return result;
 }
